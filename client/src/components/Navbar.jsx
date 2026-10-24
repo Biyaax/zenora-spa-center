@@ -67,9 +67,8 @@ function Navbar() {
           >
             <h1 className="m-0 text-primary">
               <span className="text-dark">
-                SPA
+                ZENORA
               </span>{" "}
-              Center
             </h1>
           </NavLink>
 

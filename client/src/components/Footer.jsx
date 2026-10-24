@@ -14,7 +14,7 @@ function Footer() {
             <div className="col-lg-6 pr-lg-5 mb-5">
               <Link to="/" className="navbar-brand">
                 <h1 className="mb-3 text-white">
-                  <span className="text-primary">SPA</span> Center
+                  <span className="text-primary">ZENORA</span>
                 </h1>
               </Link>
 
@@ -173,7 +173,7 @@ function Footer() {
               <p className="m-0 text-white">
                 &copy;{" "}
                 <Link to="/">
-                  Your Site Name
+                  Zenora
                 </Link>
                 . All Rights Reserved.
               </p>
@@ -187,7 +187,7 @@ function Footer() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  HTML Codex
+                  LIKHADA
                 </a>
               </p>
             </div>
