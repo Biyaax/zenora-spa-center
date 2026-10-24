@@ -1,0 +1,48 @@
+const guestAppointments = [
+  {
+    id: "APT-1001",
+    service: "Body Massage",
+    therapist: "Maria Santos",
+    date: "2026-10-28",
+    time: "2:00 PM",
+    duration: 60,
+    price: 650,
+    status: "Confirmed",
+    specialRequest: "Focus on shoulder tension.",
+  },
+  {
+    id: "APT-1002",
+    service: "Facial Therapy",
+    therapist: "Angela Reyes",
+    date: "2026-11-05",
+    time: "10:00 AM",
+    duration: 45,
+    price: 550,
+    status: "Pending",
+    specialRequest: "",
+  },
+  {
+    id: "APT-0998",
+    service: "Stone Therapy",
+    therapist: "Maria Santos",
+    date: "2026-09-20",
+    time: "1:00 PM",
+    duration: 75,
+    price: 850,
+    status: "Completed",
+    specialRequest: "",
+  },
+  {
+    id: "APT-0985",
+    service: "Face Masking",
+    therapist: "Carla Mendoza",
+    date: "2026-08-14",
+    time: "3:00 PM",
+    duration: 30,
+    price: 350,
+    status: "Completed",
+    specialRequest: "",
+  },
+];
+
+export default guestAppointments;

@@ -4,19 +4,21 @@ import TestimonialCarousel from "../components/TestimonialCarousel";
 function Testimonial() {
   return (
     <>
-      {/* Header Start */}
-      <div
-        className="jumbotron jumbotron-fluid bg-jumbotron"
-        style={{ marginBottom: "90px" }}
-      >
-        <div className="container text-center py-5">
-          <h3 className="text-white display-3 mb-4">
-            Testimonial
+      {/* =========================================
+          HEADER
+      ========================================= */}
+      <div className="jumbotron jumbotron-fluid page-banner testimonial-banner">
+        <div className="container text-center">
+          <h3 className="text-white page-banner-title mb-4">
+            Testimonials
           </h3>
 
           <div className="d-inline-flex align-items-center text-white">
             <p className="m-0">
-              <Link className="text-white" to="/">
+              <Link
+                className="text-white"
+                to="/"
+              >
                 Home
               </Link>
             </p>
@@ -24,43 +26,57 @@ function Testimonial() {
             <i className="far fa-circle px-3"></i>
 
             <p className="m-0">
-              Testimonial
+              Testimonials
             </p>
           </div>
         </div>
       </div>
-      {/* Header End */}
 
-      {/* Testimonial Start */}
+
+      {/* =========================================
+          TESTIMONIALS
+      ========================================= */}
       <div className="container-fluid py-5">
         <div className="container py-5">
+
           <div className="row align-items-center">
 
+            {/* Image */}
             <div className="col-lg-6 pb-5 pb-lg-0">
+
               <img
                 className="img-fluid w-100"
                 src="/img/testimonial.jpg"
-                alt="Spa client testimonial"
+                alt="Zenora spa client testimonial"
               />
+
             </div>
 
+
+            {/* Testimonials */}
             <div className="col-lg-6">
+
               <h6 className="d-inline-block text-primary text-uppercase bg-light py-1 px-2">
-                Testimonial
+                Testimonials
               </h6>
 
-              <h1 className="mb-4">
-                What Our Clients Say!
+              <h1 className="mb-3">
+                What Our Clients Say
               </h1>
+
+              <p className="text-muted mb-4">
+                Read about the experiences of guests who have enjoyed
+                Zenora's spa, massage, and wellness services.
+              </p>
 
               <TestimonialCarousel />
 
             </div>
 
           </div>
+
         </div>
       </div>
-      {/* Testimonial End */}
     </>
   );
 }

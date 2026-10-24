@@ -8,7 +8,7 @@ function ContactForm() {
     message: "",
   });
 
-  const [statusMessage, setStatusMessage] = useState("");
+  const [status, setStatus] = useState("");
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -18,86 +18,108 @@ function ContactForm() {
       [name]: value,
     }));
 
-    setStatusMessage("");
+    setStatus("");
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    // Temporary until we connect the backend.
-    console.log("Contact form submitted:", formData);
+    if (
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.subject.trim() ||
+      !formData.message.trim()
+    ) {
+      setStatus("Please complete all fields.");
+      return;
+    }
 
-    setStatusMessage(
-      "Your message is ready to be submitted."
-    );
+    console.log("Contact message:", formData);
+
+    setStatus("Your message has been submitted.");
+
+    setFormData({
+      name: "",
+      email: "",
+      subject: "",
+      message: "",
+    });
   };
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="form-row">
-        <div className="col-sm-6 control-group">
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            className="form-control border-0 p-4"
-            placeholder="Your Name"
-            required
-          />
+      {/* Name + Email */}
+      <div className="row">
+        <div className="col-md-6">
+          <div className="form-group">
+            <input
+              type="text"
+              name="name"
+              className="form-control contact-input"
+              placeholder="Your Name"
+              value={formData.name}
+              onChange={handleChange}
+            />
+          </div>
         </div>
 
-        <div className="col-sm-6 control-group">
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            className="form-control border-0 p-4"
-            placeholder="Your Email"
-            required
-          />
+        <div className="col-md-6">
+          <div className="form-group">
+            <input
+              type="email"
+              name="email"
+              className="form-control contact-input"
+              placeholder="Your Email"
+              value={formData.email}
+              onChange={handleChange}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="control-group">
+      {/* Subject */}
+      <div className="form-group">
         <input
           type="text"
           name="subject"
+          className="form-control contact-input"
+          placeholder="Subject"
           value={formData.subject}
           onChange={handleChange}
-          className="form-control border-0 p-4"
-          placeholder="Subject"
-          required
         />
       </div>
 
-      <div className="control-group">
+      {/* Message */}
+      <div className="form-group">
         <textarea
           name="message"
+          className="form-control contact-message"
+          rows="6"
+          placeholder="Message"
           value={formData.message}
           onChange={handleChange}
-          className="form-control border-0 py-3 px-4"
-          rows="3"
-          placeholder="Message"
-          required
-        ></textarea>
+        />
       </div>
 
-      <div>
-        <button
-          className="btn btn-primary py-3 px-4"
-          type="submit"
+      {status && (
+        <div
+          className={`alert ${
+            status.includes("submitted")
+              ? "alert-success"
+              : "alert-danger"
+          }`}
         >
-          Send Message
-        </button>
-      </div>
-
-      {statusMessage && (
-        <p className="text-success mt-3 mb-0">
-          {statusMessage}
-        </p>
+          {status}
+        </div>
       )}
+
+      <button
+        type="submit"
+        className="btn btn-primary px-4 py-3"
+      >
+        <i className="far fa-paper-plane mr-2"></i>
+        Send Message
+      </button>
     </form>
   );
 }
