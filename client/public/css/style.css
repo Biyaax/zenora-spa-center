@@ -9939,3 +9939,435 @@ h6,
         font-size: 18px;
     }
 }
+
+/* Therapist Cards */
+.therapist-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #211e1c;
+    overflow: hidden;
+}
+
+.therapist-card-image {
+    width: 100%;
+    height: 350px;
+    object-fit: cover;
+    display: block;
+}
+
+.therapist-card-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding: 28px;
+    text-align: center;
+}
+
+.therapist-specialty {
+    display: inline-block;
+    margin: 4px;
+    padding: 5px 10px;
+    background: rgba(249, 163, 146, 0.15);
+    color: #f9a392;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+@media (max-width: 991.98px) {
+    .therapist-card-image {
+        height: 320px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .therapist-card-image {
+        height: 300px;
+    }
+
+    .therapist-card-body {
+        padding: 22px;
+    }
+}
+
+/* Authentication Modal */
+.auth-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.65);
+    overflow-y: auto;
+}
+
+.auth-modal {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    max-height: calc(100vh - 40px);
+    padding: 40px;
+    margin: auto;
+    background: #ffffff;
+    overflow-y: auto;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.25);
+}
+
+.auth-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #211e1c;
+    font-size: 32px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.auth-modal-close:hover {
+    color: #f9a392;
+}
+
+.auth-text-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #f9a392;
+    cursor: pointer;
+}
+
+.auth-text-button:hover {
+    color: #211e1c;
+    text-decoration: underline;
+}
+
+@media (max-width: 575.98px) {
+    .auth-modal-backdrop {
+        padding: 10px;
+        align-items: flex-start;
+    }
+
+    .auth-modal {
+        padding: 35px 22px 25px;
+        margin-top: 20px;
+        max-height: calc(100vh - 40px);
+    }
+}
+
+/* Guest Dashboard */
+.guest-dashboard-card {
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    color: #211e1c;
+}
+
+.guest-dashboard-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+}
+
+.guest-appointment-preview {
+    border-left: 4px solid #f9a392;
+}
+
+/* Guest Appointment Cards */
+.guest-appointment-card {
+    border-left: 4px solid #f9a392;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.guest-appointment-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+}
+
+
+/* Guest Action Modals */
+.guest-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 20px;
+
+    background: rgba(0, 0, 0, 0.65);
+}
+
+.guest-action-modal {
+    position: relative;
+
+    width: 100%;
+    max-width: 500px;
+
+    padding: 35px;
+
+    background: #ffffff;
+
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.25);
+}
+
+.guest-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 16px;
+
+    padding: 0;
+
+    border: none;
+    background: transparent;
+
+    color: #211e1c;
+
+    font-size: 30px;
+    line-height: 1;
+
+    cursor: pointer;
+}
+
+.guest-modal-close:hover {
+    color: #f9a392;
+}
+
+@media (max-width: 575.98px) {
+    .guest-action-modal {
+        padding: 30px 22px 22px;
+    }
+}
+
+/* Guest Booking History */
+.guest-history-card {
+    border-left: 4px solid #f9a392;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.guest-history-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+}
+
+/* Smaller Therapist Cards on Home Only */
+.home-therapist-card .therapist-card-image {
+    height: 250px;
+}
+
+.home-therapist-card .therapist-card-body {
+    padding: 20px 18px;
+}
+
+.home-therapist-card .therapist-card-body h5 {
+    font-size: 18px;
+}
+
+.home-therapist-card .therapist-card-body p {
+    font-size: 14px;
+}
+
+.home-therapist-card .therapist-specialty {
+    padding: 4px 8px;
+    margin: 3px;
+    font-size: 12px;
+}
+
+.home-therapist-card .btn {
+    padding: 9px 12px;
+    font-size: 14px;
+}
+
+@media (max-width: 991.98px) {
+    .home-therapist-card .therapist-card-image {
+        height: 270px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .home-therapist-card .therapist-card-image {
+        height: 280px;
+    }
+}
+
+/* =========================================
+   PAGE BANNERS
+========================================= */
+
+.page-banner {
+    min-height: 250px;
+    margin-bottom: 60px !important;
+
+    display: flex;
+    align-items: center;
+
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+
+.page-banner .container {
+    padding-top: 35px !important;
+    padding-bottom: 35px !important;
+}
+
+.page-banner-title {
+    font-size: 52px;
+    line-height: 1.1;
+}
+
+
+/* =========================================
+   ABOUT
+========================================= */
+
+.about-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/carousel-1.jpg") !important;
+
+    background-position: center 45% !important;
+}
+
+
+/* =========================================
+   SERVICES
+========================================= */
+
+.services-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/carousel-2.jpg") !important;
+
+    background-position: center !important;
+}
+
+
+/* =========================================
+   PRICING / PACKAGES
+========================================= */
+
+.pricing-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/pricing.jpg") !important;
+
+    background-position: center !important;
+}
+
+
+/* =========================================
+   APPOINTMENT
+========================================= */
+
+.appointment-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/carousel-3.jpg") !important;
+
+    background-position: center !important;
+}
+
+
+/* =========================================
+   OPENING HOURS
+========================================= */
+
+.opening-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/opening.jpg") !important;
+
+    background-position: center !important;
+}
+
+
+/* =========================================
+   THERAPISTS
+========================================= */
+
+.therapists-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/about.jpg") !important;
+
+    background-position: center 35% !important;
+}
+
+
+/* =========================================
+   TESTIMONIALS
+========================================= */
+
+.testimonial-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/testimonial.jpg") !important;
+
+    background-position: center !important;
+}
+
+
+/* =========================================
+   CONTACT
+========================================= */
+
+.contact-banner {
+    background-image:
+        linear-gradient(
+            rgba(33, 30, 28, 0.58),
+            rgba(33, 30, 28, 0.58)
+        ),
+        url("/img/carousel-1.jpg") !important;
+
+    background-position: center 60% !important;
+}
+
+
+/* =========================================
+   RESPONSIVE
+========================================= */
+
+@media (max-width: 991.98px) {
+    .page-banner {
+        min-height: 220px;
+    }
+
+    .page-banner-title {
+        font-size: 44px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .page-banner {
+        min-height: 190px;
+        margin-bottom: 40px !important;
+    }
+
+    .page-banner-title {
+        font-size: 36px;
+    }
+}
