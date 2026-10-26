@@ -196,6 +196,12 @@ db.exec(`
     check_in_at TEXT,
     check_out_at TEXT,
 
+    amount_due REAL NOT NULL DEFAULT 0
+      CHECK (amount_due >= 0),
+
+    cancel_reason TEXT,
+    reminder_sent_at TEXT,
+
     created_by INTEGER,
 
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -352,6 +358,38 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS
     idx_payments_appointment
   ON payments (appointment_id);
+`);
+
+/* =========================
+   UPGRADE EXISTING DATABASES
+   (CREATE TABLE IF NOT EXISTS does not add new columns
+   to a table that already exists.)
+========================= */
+
+function ensureColumn(table, column, definition) {
+  const columns = db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map((row) => row.name);
+
+  if (!columns.includes(column)) {
+    db.exec(
+      `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`
+    );
+    console.log(`Added ${table}.${column}`);
+  }
+}
+
+ensureColumn("appointments", "amount_due", "REAL NOT NULL DEFAULT 0");
+ensureColumn("appointments", "cancel_reason", "TEXT");
+ensureColumn("appointments", "reminder_sent_at", "TEXT");
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_notifications_user
+  ON notifications (user_id, is_read);
+
+  CREATE INDEX IF NOT EXISTS idx_clients_email
+  ON clients (email);
 `);
 
 console.log("Tables created successfully.");
