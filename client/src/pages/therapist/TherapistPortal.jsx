@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import TherapistSidebar from "../../components/TherapistSidebar";
 
-// Frontend-only sample data. The integration team will replace these records with API data.
-// The current therapist's identity and authorized appointments must come from login/session APIs.
+// FRONTEND SAMPLE ONLY. Do not use these records for real client or reporting data.
+// Replace with authenticated, therapist-scoped API responses during backend integration.
 const dateOffset = (days = 0) => {
   const date = new Date();
   date.setHours(12, 0, 0, 0);
@@ -11,50 +12,101 @@ const dateOffset = (days = 0) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 const sampleAppointments = [
-  { id: "APT-1001", date: dateOffset(0), time: "09:00", client: "Bea Mendoza", service: "Body Massage", duration: 60, status: "Confirmed", request: "Prefers gentle pressure", notes: "" },
-  { id: "APT-1003", date: dateOffset(0), time: "14:00", client: "Carla Gomez", service: "Stone Therapy", duration: 75, status: "Checked In", request: "Avoid shoulder area", notes: "" },
-  { id: "APT-1007", date: dateOffset(1), time: "11:00", client: "Nina Torres", service: "Aromatherapy", duration: 60, status: "Confirmed", request: "Lavender oil preferred", notes: "" },
-  { id: "APT-1008", date: dateOffset(2), time: "15:30", client: "Paolo Reyes", service: "Swedish Massage", duration: 60, status: "Confirmed", request: "None", notes: "" },
+  { id: "APT-1001", date: dateOffset(0), time: "09:00", client: "Bea Mendoza", phone: "0917 000 0001", service: "Body Massage", duration: 60, status: "Confirmed", request: "Prefers gentle pressure", notes: "" },
+  { id: "APT-1003", date: dateOffset(0), time: "14:00", client: "Carla Gomez", phone: "0917 000 0003", service: "Stone Therapy", duration: 75, status: "Checked In", request: "Avoid shoulder area", notes: "" },
+  { id: "APT-1007", date: dateOffset(1), time: "11:00", client: "Nina Torres", phone: "0917 000 0007", service: "Aromatherapy", duration: 60, status: "Confirmed", request: "Lavender oil preferred", notes: "" },
+  { id: "APT-1008", date: dateOffset(2), time: "15:30", client: "Paolo Reyes", phone: "0917 000 0008", service: "Swedish Massage", duration: 60, status: "Confirmed", request: "None", notes: "" },
+  { id: "APT-1009", date: dateOffset(-1), time: "16:00", client: "Mia Ramos", phone: "0917 000 0009", service: "Body Massage", duration: 60, status: "Completed", request: "Focus on back and shoulders", notes: "" },
+  { id: "APT-1010", date: dateOffset(-1), time: "10:00", client: "Leo Tan", phone: "0917 000 0010", service: "Facial Therapy", duration: 45, status: "No-Show", request: "None", notes: "" },
+  { id: "APT-1011", date: dateOffset(-1), time: "08:30", client: "Ria Cruz", phone: "0917 000 0011", service: "Foot Massage", duration: 30, status: "Confirmed", request: "Gentle pressure", notes: "" },
 ];
 const pages = {
   dashboard: ["Dashboard", "Your personal workday overview"],
   schedule: ["My Schedule", "Review your daily and weekly appointments"],
-  appointments: ["My Appointments", "Review assigned clients and update session statuses"],
+  appointments: ["My Appointments", "Review clients, manage session statuses, and see your session history"],
   notes: ["Service Notes", "Record notes after each completed service"],
-  availability: ["Availability & Time-Off", "Manage your available days and send time-off requests"],
+  availability: ["Availability & Time-Off", "Manage your available days and submit time-off requests"],
 };
+const statuses = ["All", "Confirmed", "Checked In", "Ongoing", "Completed", "No-Show"];
 const formatDate = (value) => new Date(`${value}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 const formatTime = (value) => new Date(`2026-01-01T${value}:00`).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+const formatTimestamp = (value) => new Date(value).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const weekOf = (dateString) => {
-  const d = new Date(`${dateString}T00:00:00`);
-  const day = d.getDay();
-  d.setDate(d.getDate() - ((day + 6) % 7));
-  const start = new Date(d);
-  const end = new Date(d); end.setDate(start.getDate() + 6);
-  const localDate = (v) => `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
-  return [localDate(start), localDate(end)];
+  const start = new Date(`${dateString}T00:00:00`);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const local = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return [local(start), local(end)];
 };
+const scheduledEndPassed = (a) => new Date(`${a.date}T${a.time}:00`).getTime() + a.duration * 60000 <= Date.now();
+
 function Badge({ status }) {
   return <span className={`therapist-badge badge-${status.toLowerCase().replace(/\s+/g, "-")}`}>{status}</span>;
 }
-function AppointmentTable({ rows, onUpdate, showActions = false }) {
-  if (!rows.length) return <p className="therapist-empty">No appointments match your selection.</p>;
-  return <div className="therapist-table-wrap"><table className="therapist-table">
-    <thead><tr><th>Booking ID</th><th>Date / Time</th><th>Client</th><th>Service</th><th>Special Request</th><th>Status</th>{showActions && <th>Actions</th>}</tr></thead>
-    <tbody>{rows.map(a => <tr key={a.id}>
-      <td><strong>{a.id}</strong></td><td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td><td><strong>{a.client}</strong><details className="therapist-client-details"><summary>View details</summary><div><p><b>Booking:</b> {a.id}</p><p><b>Service:</b> {a.service} ({a.duration} min)</p><p><b>Special request:</b> {a.request || "None"}</p></div></details></td><td>{a.service}<small>{a.duration} min</small></td><td>{a.request}</td><td><Badge status={a.status} /></td>
-      {showActions && <td><div className="therapist-inline-actions">
-        {a.status === "Checked In" && <button className="therapist-btn primary" onClick={() => onUpdate(a.id, "Ongoing")}>Start</button>}
-        {a.status === "Ongoing" && <button className="therapist-btn primary" onClick={() => onUpdate(a.id, "Completed")}>Complete</button>}
-        {a.status === "Confirmed" && <button className="therapist-btn outline" onClick={() => onUpdate(a.id, "No-Show")}>No-Show</button>}
-        {["Completed", "No-Show"].includes(a.status) && <span className="therapist-subtle">No actions</span>}
-        {a.status === "Confirmed" && <span className="therapist-subtle">Awaiting check-in</span>}
-      </div></td>}
-    </tr>)}</tbody>
-  </table></div>;
+
+function AppointmentTable({ rows, onRequestStatus, allowActions = false }) {
+  if (!rows.length) return <div className="therapist-empty">No appointments match these filters. Choose All Dates or another status to view more sessions.</div>;
+  return <div className="therapist-table-wrap">
+    <table className="therapist-table">
+      <thead><tr><th>Booking ID</th><th>Date / Time</th><th>Client</th><th>Service</th><th>Special Request</th><th>Status</th>{allowActions && <th>Actions</th>}</tr></thead>
+      <tbody>{rows.map(a => <tr key={a.id}>
+        <td><strong>{a.id}</strong></td>
+        <td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td>
+        <td><strong>{a.client}</strong>
+          <details className="therapist-client-details"><summary>View details</summary>
+            <div><p><b>Phone:</b> {a.phone}</p><p><b>Service:</b> {a.service} ({a.duration} min)</p><p><b>Request:</b> {a.request || "None"}</p></div>
+          </details>
+        </td>
+        <td>{a.service}<small>{a.duration} min</small></td>
+        <td>{a.request || "None"}</td><td><Badge status={a.status} /></td>
+        {allowActions && <td><div className="therapist-inline-actions">
+          {a.status === "Checked In" && <button type="button" className="therapist-btn primary" onClick={() => onRequestStatus(a, "Ongoing")}>Start</button>}
+          {a.status === "Ongoing" && <button type="button" className="therapist-btn primary" onClick={() => onRequestStatus(a, "Completed")}>Complete</button>}
+          {a.status === "Confirmed" && (scheduledEndPassed(a)
+            ? <button type="button" className="therapist-btn outline" onClick={() => onRequestStatus(a, "No-Show")}>Mark No-Show</button>
+            : <span className="therapist-subtle">{a.date > dateOffset(0) ? "Upcoming" : "Awaiting check-in / session end"}</span>)}
+          {a.status === "Completed" && <Link to="/therapist/notes" className="therapist-text-link">View notes</Link>}
+          {a.status === "No-Show" && <span className="therapist-subtle">Recorded</span>}
+        </div></td>}
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
+
+function ConfirmDialog({ pending, onConfirm, onCancel, cancelRef }) {
+  if (!pending) return null;
+  const title = pending.kind === "undo" ? "Undo the last status change?"
+    : pending.kind === "status" ? `Confirm ${pending.next} status?`
+    : pending.kind === "note" ? "Save service notes?"
+    : pending.kind === "availability" ? "Save regular availability?"
+    : "Submit time-off request?";
+  const details = pending.kind === "status"
+    ? `${pending.appointment.client} (${pending.appointment.id}) will change from ${pending.appointment.status} to ${pending.next}.`
+    : pending.kind === "undo" ? `${pending.action.id} will return from ${pending.action.next} to ${pending.action.previous}.`
+    : pending.kind === "note" ? `Save the edited notes for booking ${pending.id}?`
+    : pending.kind === "timeOff" ? `Add a time-off request for ${formatDate(pending.date)}?`
+    : "Update your selected regular working days?";
+  return <div className="therapist-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
+    <section role="alertdialog" aria-modal="true" aria-labelledby="therapist-dialog-title" aria-describedby="therapist-dialog-description" className="therapist-dialog">
+      <div className="therapist-dialog-heading"><span className="therapist-dialog-icon"><i className="fas fa-question" aria-hidden="true" /></span><h3 id="therapist-dialog-title">{title}</h3></div>
+      <p id="therapist-dialog-description">{details}</p>
+      {pending.kind === "status" && pending.next === "No-Show" && <p className="therapist-warning">A no-show should only be recorded after the scheduled session has elapsed and attendance has been verified.</p>}
+      <div className="therapist-dialog-actions">
+        <button type="button" className="therapist-btn neutral" ref={cancelRef} onClick={onCancel}>Cancel</button>
+        <button type="button" className="therapist-btn primary" onClick={onConfirm}>Confirm</button>
+      </div>
+    </section>
+  </div>;
+}
+
 export default function TherapistPortal() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const accountMenuRef = useRef(null);
+  const cancelRef = useRef(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const section = location.pathname.split("/")[2] || "dashboard";
   const current = pages[section] ? section : "dashboard";
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -62,6 +114,11 @@ export default function TherapistPortal() {
   const [selectedDate, setSelectedDate] = useState(dateOffset(0));
   const [view, setView] = useState("daily");
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [appointmentTab, setAppointmentTab] = useState("list");
+  const [history, setHistory] = useState([]);
+  const [lastAction, setLastAction] = useState(null);
+  const [pending, setPending] = useState(null);
   const [editingNotes, setEditingNotes] = useState({});
   const [notice, setNotice] = useState({ page: "", message: "" });
   const [availableDays, setAvailableDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -69,47 +126,138 @@ export default function TherapistPortal() {
   const [offDate, setOffDate] = useState("");
   const [offReason, setOffReason] = useState("");
 
+  useEffect(() => {
+    function onOutside(event) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) setAccountOpen(false);
+    }
+    function onKey(event) {
+      if (event.key === "Escape") { setAccountOpen(false); setPending(null); }
+    }
+    document.addEventListener("pointerdown", onOutside);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onOutside); document.removeEventListener("keydown", onKey); };
+  }, []);
+  useEffect(() => { if (pending) cancelRef.current?.focus(); }, [pending]);
+
+  const showNotice = (message) => setNotice({ page: current, message });
+  const handleLogout = () => {
+    // Frontend-only: backend teammates must replace with authenticated staff logout/session invalidation.
+    logout(); setAccountOpen(false); navigate("/", { replace: true });
+  };
   const [weekStart, weekEnd] = weekOf(selectedDate);
   const visibleRows = useMemo(() => appointments.filter(a => {
-    const dateMatch = view === "daily" ? a.date === selectedDate : (a.date >= weekStart && a.date <= weekEnd);
-    const textMatch = `${a.id} ${a.client} ${a.service} ${a.status}`.toLowerCase().includes(query.toLowerCase());
-    return dateMatch && textMatch;
-  }).sort((a,b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)), [appointments, query, selectedDate, view, weekStart, weekEnd]);
+    const dateMatch = view === "all" || (view === "daily" ? a.date === selectedDate : a.date >= weekStart && a.date <= weekEnd);
+    const matchText = `${a.id} ${a.client} ${a.service} ${a.status}`.toLowerCase().includes(query.trim().toLowerCase());
+    return dateMatch && matchText && (statusFilter === "All" || a.status === statusFilter);
+  }).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)), [appointments, selectedDate, weekStart, weekEnd, query, view, statusFilter]);
   const todayRows = appointments.filter(a => a.date === dateOffset(0));
-  const updateStatus = (id, status) => {
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-    setNotice({ page: current, message: `${id} changed to ${status}. This change will reset when the page reloads.` });
+  const byStatus = (status) => appointments.filter(a => a.status === status).length;
+  const selectStatus = (status) => { setStatusFilter(status); if (status !== "All") setView("all"); };
+
+  const confirmPending = () => {
+    if (!pending) return;
+    if (pending.kind === "status") {
+      const { appointment, next } = pending;
+      const latest = appointments.find(a => a.id === appointment.id);
+      if (!latest || latest.status !== appointment.status) {
+        showNotice("This appointment has changed. Please review it before trying again.");
+      } else if (next === "No-Show" && !scheduledEndPassed(latest)) {
+        showNotice("The scheduled session has not ended. No-Show is not available yet.");
+      } else {
+        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: next } : a));
+        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: appointment.status, next, action: "Changed", at: new Date().toISOString() }, ...prev]);
+        setLastAction({ id: appointment.id, previous: appointment.status, next });
+        showNotice(`${appointment.id} updated to ${next}. This is a local sample change.`);
+      }
+    } else if (pending.kind === "undo") {
+      const action = pending.action;
+      const latest = appointments.find(a => a.id === action.id);
+      if (!latest || latest.status !== action.next) {
+        showNotice("Undo is no longer available for this appointment.");
+      } else if (action.next === "Completed" && latest.notes.trim()) {
+        showNotice("Status correction needs review because service notes are already recorded.");
+      } else {
+        setAppointments(prev => prev.map(a => a.id === action.id ? { ...a, status: action.previous } : a));
+        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: action.id, client: latest.client, previous: action.next, next: action.previous, action: "Undid change", at: new Date().toISOString() }, ...prev]);
+        showNotice(`${action.id} restored to ${action.previous}. The correction is recorded in this page's history.`);
+      }
+      setLastAction(null);
+    } else if (pending.kind === "note") {
+      const text = (editingNotes[pending.id] ?? appointments.find(a => a.id === pending.id)?.notes ?? "").trim();
+      if (!text) showNotice("Enter a service note before saving.");
+      else {
+        setAppointments(prev => prev.map(a => a.id === pending.id ? { ...a, notes: text } : a));
+        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: pending.id, client: appointments.find(a => a.id === pending.id)?.client ?? "", previous: "—", next: "Notes saved", action: "Service note", at: new Date().toISOString() }, ...prev]);
+        setLastAction(prev => prev?.id === pending.id ? null : prev);
+        showNotice(`Service notes for ${pending.id} saved in this local preview.`);
+      }
+    } else if (pending.kind === "availability") {
+      showNotice("Availability updated for this session only.");
+    } else if (pending.kind === "timeOff") {
+      setTimeOff(prev => [...prev, { id: Date.now(), date: pending.date, reason: pending.reason, status: "Pending" }]);
+      setOffDate(""); setOffReason("");
+      showNotice("Time-off request added to your sample list; it has not been sent to a manager.");
+    }
+    setPending(null);
   };
-  const saveNote = (id) => {
-    const note = (editingNotes[id] ?? appointments.find(a => a.id === id)?.notes ?? "").trim();
-    if (!note) { setNotice({ page: current, message: "Enter a service note before saving." }); return; }
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, notes: note } : a));
-    setNotice({ page: current, message: `Note updated for ${id}. It will reset when the page reloads.` });
-  };
+
   return <div className="therapist-layout">
-    <TherapistSidebar mobileOpen={mobileOpen} onClose={() => { setMobileOpen(false); setNotice({ page: "", message: "" }); }} />
+    <TherapistSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
     <main className="therapist-main">
       <header className="therapist-topbar">
-        <div className="therapist-heading"><button className="therapist-menu-btn" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><i className="fas fa-bars" /></button><div><p>ZENORA Staff Workspace</p><strong className="therapist-topbar-name">Massage Therapist Portal</strong></div></div>
-        <div className="therapist-user"><span className="therapist-sample-chip" title="These are sample records. Changes are not saved to the server.">Sample data</span><span className="therapist-avatar">T</span><div><strong>Therapist</strong><small>Staff Portal</small></div></div>
+        <div className="therapist-heading"><button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><i className="fas fa-bars" /></button><div><p>ZENORA Staff Workspace</p><strong className="therapist-topbar-name">Massage Therapist Portal</strong></div></div>
+        <div className="therapist-user">
+          <span className="therapist-sample-chip" title="Sample records and in-memory actions only">Sample data</span>
+          <div className="therapist-user-menu-wrap" ref={accountMenuRef}>
+            <button type="button" className="therapist-account-trigger" aria-expanded={accountOpen} aria-haspopup="true" aria-controls="therapist-account-options" onClick={() => setAccountOpen(open => !open)}>
+              <span className="therapist-avatar" aria-hidden="true">T</span><span className="therapist-user-text"><strong>Therapist</strong><small>Staff Portal</small></span><i className={`fas fa-chevron-${accountOpen ? "up" : "down"} therapist-account-caret`} aria-hidden="true" />
+            </button>
+            {accountOpen && <nav id="therapist-account-options" className="therapist-account-menu" aria-label="Therapist account options">
+              {[["/therapist/dashboard", "fas fa-home", "Dashboard"], ["/therapist/schedule", "far fa-calendar-alt", "My Schedule"], ["/therapist/appointments", "fas fa-clipboard-list", "My Appointments"], ["/therapist/notes", "far fa-sticky-note", "Service Notes"], ["/therapist/availability", "far fa-clock", "Availability & Time-Off"]].map(([path, icon, label]) => <NavLink key={path} to={path} onClick={() => setAccountOpen(false)} className={({ isActive }) => `therapist-account-link ${isActive ? "active" : ""}`}><i className={icon} aria-hidden="true" />{label}</NavLink>)}
+              <div className="therapist-account-divider" /><button type="button" className="therapist-account-link therapist-account-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt" aria-hidden="true" />Logout</button>
+            </nav>}
+          </div>
+        </div>
       </header>
       <div className="therapist-content">
         <div className="therapist-intro"><h1>{current === "dashboard" ? "Good day!" : pages[current][0]}</h1><p>{pages[current][1]}</p></div>
-        {notice.page === current && notice.message && <div className="therapist-notice" role="status">{notice.message}<button onClick={() => setNotice({ page: "", message: "" })} aria-label="Dismiss notification">×</button></div>}
+        {notice.page === current && notice.message && <div className="therapist-notice" role="status">{notice.message}<button type="button" onClick={() => setNotice({ page: "", message: "" })} aria-label="Dismiss notification">×</button></div>}
+
         {current === "dashboard" && <>
           <div className="therapist-stats">
             {[["Today's Sessions", todayRows.length, "far fa-calendar-alt"], ["Ready to Start", todayRows.filter(a => a.status === "Checked In").length, "far fa-clock"], ["Ongoing", todayRows.filter(a => a.status === "Ongoing").length, "fas fa-spa"], ["Completed", todayRows.filter(a => a.status === "Completed").length, "fas fa-check-circle"]].map(([label, value, icon]) => <div className="therapist-stat" key={label}><div><p>{label}</p><h2>{value}</h2></div><span><i className={icon} /></span></div>)}
           </div>
-          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows}/></div>
-          <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/notes" className="therapist-action"><i className="far fa-sticky-note"/><div><h5>Service Notes</h5><p>Record post-session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage days and time-off requests.</p></div></Link></div>
+          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} /></div>
+          <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/notes" className="therapist-action"><i className="far fa-sticky-note"/><div><h5>Service Notes</h5><p>Record post-session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage your days and time-off requests.</p></div></Link></div>
         </>}
-        {(current === "schedule" || current === "appointments") && <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>{current === "schedule" ? "Assigned Schedule" : "Appointment List"}</h4><p>Review your assigned sessions, client preferences, and appointment details.</p></div></div>
-          <div className="therapist-filters"><div className="therapist-switch"><button className={view === "daily" ? "selected" : ""} onClick={() => setView("daily")}>Daily</button><button className={view === "weekly" ? "selected" : ""} onClick={() => setView("weekly")}>Weekly</button></div><label>Date <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}/></label><label className="therapist-search">Search <input placeholder="Client, booking, service..." value={query} onChange={e => setQuery(e.target.value)}/></label></div>
-          <AppointmentTable rows={visibleRows} showActions={current === "appointments"} onUpdate={updateStatus}/></div>}
-        {current === "notes" && <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Session Notes</h4><p>Only completed appointments can receive post-service notes.</p></div></div>{appointments.filter(a => a.status === "Completed").length === 0 ? <p className="therapist-empty">No completed sessions yet. Mark an ongoing session completed in My Appointments to add notes.</p> : appointments.filter(a => a.status === "Completed").map(a => <div className="therapist-note-entry" key={a.id}><div><strong>{a.client} — {a.service}</strong><small>{a.id} · {formatDate(a.date)}</small></div><label htmlFor={`note-${a.id}`}>Service notes</label><textarea id={`note-${a.id}`} rows="3" value={editingNotes[a.id] ?? a.notes} onChange={e => setEditingNotes(v => ({...v, [a.id]:e.target.value}))} placeholder="Enter factual service notes..."/><button className="therapist-btn primary" onClick={() => saveNote(a.id)}>Save Notes</button></div>)}</div>}
-        {current === "availability" && <div className="therapist-two-col"><div className="therapist-panel"><h4>Regular Availability</h4><p className="therapist-subtle">Choose your regular working days.</p><div className="therapist-day-options">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day => <label key={day}><input type="checkbox" checked={availableDays.includes(day)} onChange={e => setAvailableDays(cur => e.target.checked ? [...cur, day] : cur.filter(x => x !== day))}/> {day}</label>)}</div><button className="therapist-btn primary" onClick={() => setNotice({ page: current, message: "Availability updated on this page. It will reset when reloaded." })}>Save Availability</button></div>
-          <div className="therapist-panel"><h4>Request Time Off</h4><form className="therapist-form" onSubmit={e => {e.preventDefault(); if (!offDate || !offReason.trim()) return; setTimeOff(rows => [...rows, {id: rows.length + 1,date:offDate,reason:offReason.trim(),status:"Pending"}]); setOffDate("");setOffReason("");setNotice({ page: current, message: "Request added to your list. It has not been submitted to a manager yet." });}}><label>Date <input type="date" required min={dateOffset(0)} value={offDate} onChange={e => setOffDate(e.target.value)} /></label><label>Reason <textarea required rows="3" value={offReason} onChange={e => setOffReason(e.target.value)} placeholder="Reason for requested time off"/></label><button className="therapist-btn primary" type="submit">Submit Request</button></form>{timeOff.length > 0 && <div className="therapist-requests"><h5>My Time-Off Requests</h5>{timeOff.map(t => <p key={t.id}>{formatDate(t.date)} — {t.reason} <Badge status={t.status}/></p>)}</div>}</div></div>}
+
+        {(current === "schedule" || current === "appointments") && <div className="therapist-panel">
+          <div className="therapist-panel-title"><div><h4>{current === "schedule" ? "Assigned Schedule" : "Appointment Management"}</h4><p>{current === "schedule" ? "Your assigned appointments, displayed by date." : "Review appointment statuses and your own session updates."}</p></div></div>
+          {current === "appointments" && <div className="therapist-subtabs" aria-label="Appointment sections">
+            <button type="button" className={appointmentTab === "list" ? "active" : ""} onClick={() => setAppointmentTab("list")}><i className="far fa-calendar-alt" aria-hidden="true" /> Appointment List</button>
+            <button type="button" className={appointmentTab === "history" ? "active" : ""} onClick={() => setAppointmentTab("history")}><i className="fas fa-history" aria-hidden="true" /> My Status History {history.length > 0 && <span className="therapist-counter">{history.length}</span>}</button>
+          </div>}
+          {(current === "schedule" || appointmentTab === "list") && <>
+            <div className="therapist-filters"><div className="therapist-switch" aria-label="Date range"><button type="button" className={view === "daily" ? "selected" : ""} onClick={() => setView("daily")}>Daily</button><button type="button" className={view === "weekly" ? "selected" : ""} onClick={() => setView("weekly")}>Weekly</button><button type="button" className={view === "all" ? "selected" : ""} onClick={() => setView("all")}>All Dates</button></div>{view !== "all" && <label>Date <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}/></label>}<label className="therapist-search">Search <input type="search" placeholder="Client, booking, service..." value={query} onChange={e => setQuery(e.target.value)}/></label></div>
+            {current === "appointments" && <div className="therapist-status-filters" role="group" aria-label="Filter appointments by status">{statuses.map(status => <button type="button" key={status} className={statusFilter === status ? "selected" : ""} aria-pressed={statusFilter === status} onClick={() => selectStatus(status)}>{status} <span>{status === "All" ? appointments.length : byStatus(status)}</span></button>)}</div>}
+            <div className="therapist-list-summary"><span>{visibleRows.length} appointment{visibleRows.length === 1 ? "" : "s"} found</span>{current === "appointments" && (statusFilter !== "All" || view !== "daily") && <button type="button" className="therapist-text-link therapist-reset" onClick={() => { setView("daily"); setStatusFilter("All"); setQuery(""); setSelectedDate(dateOffset(0)); }}>Reset filters</button>}</div>
+            <AppointmentTable rows={visibleRows} allowActions={current === "appointments"} onRequestStatus={(appointment, next) => setPending({ kind: "status", appointment, next })}/>
+            {current === "appointments" && lastAction && <div className="therapist-undo-bar"><span>Last update: <strong>{lastAction.id}</strong> → {lastAction.next}</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
+          </>}
+          {current === "appointments" && appointmentTab === "history" && <>
+            <div className="therapist-history-intro"><p>Recent status changes and note updates made in this browser session. This is not the manager's system-wide activity log.</p></div>
+            {history.length === 0 ? <div className="therapist-empty">No changes recorded in this session yet. Try confirming a status change in Appointment List.</div> : <div className="therapist-table-wrap"><table className="therapist-table therapist-history-table"><thead><tr><th>When</th><th>Booking / Client</th><th>Action</th><th>Previous</th><th>New status</th></tr></thead><tbody>{history.map(entry => <tr key={entry.key}><td>{formatTimestamp(entry.at)}</td><td><strong>{entry.id}</strong><small>{entry.client}</small></td><td>{entry.action}</td><td>{entry.previous}</td><td>{entry.next}</td></tr>)}</tbody></table></div>}
+            {lastAction && <div className="therapist-undo-bar"><span>Made a mistake on <strong>{lastAction.id}</strong>?</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
+          </>}
+        </div>}
+
+        {current === "notes" && <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Session Notes</h4><p>Record or edit post-service notes for completed appointments.</p></div></div>{appointments.filter(a => a.status === "Completed").length === 0 ? <p className="therapist-empty">No completed sessions yet. Mark an ongoing session completed in My Appointments to add notes.</p> : appointments.filter(a => a.status === "Completed").map(a => <div className="therapist-note-entry" key={a.id}><div><strong>{a.client} — {a.service}</strong><small>{a.id} · {formatDate(a.date)} · {formatTime(a.time)}</small></div><label htmlFor={`note-${a.id}`}>Service notes</label><textarea id={`note-${a.id}`} rows="3" value={editingNotes[a.id] ?? a.notes} onChange={e => setEditingNotes(prev => ({ ...prev, [a.id]: e.target.value }))} placeholder="Enter factual service notes..."/><button type="button" className="therapist-btn primary" disabled={!(editingNotes[a.id] ?? a.notes).trim()} onClick={() => setPending({ kind: "note", id: a.id })}>{a.notes ? "Update Notes" : "Save Notes"}</button></div>)}</div>}
+
+        {current === "availability" && <div className="therapist-two-col"><div className="therapist-panel"><h4>Regular Availability</h4><p className="therapist-subtle">Choose your regular working days.</p><div className="therapist-day-options">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <label key={day}><input type="checkbox" checked={availableDays.includes(day)} onChange={e => setAvailableDays(cur => e.target.checked ? [...cur, day] : cur.filter(x => x !== day))}/> {day}</label>)}</div><button type="button" className="therapist-btn primary" onClick={() => setPending({ kind: "availability" })}>Save Availability</button></div>
+          <div className="therapist-panel"><h4>Request Time Off</h4><form className="therapist-form" onSubmit={e => { e.preventDefault(); if (!offDate || !offReason.trim()) return; setPending({ kind: "timeOff", date: offDate, reason: offReason.trim() }); }}><label>Date <input type="date" required min={dateOffset(0)} value={offDate} onChange={e => setOffDate(e.target.value)} /></label><label>Reason <textarea required rows="3" value={offReason} onChange={e => setOffReason(e.target.value)} placeholder="Reason for requested time off"/></label><button className="therapist-btn primary" type="submit">Submit Request</button></form>{timeOff.length > 0 && <div className="therapist-requests"><h5>My Time-Off Requests</h5>{timeOff.map(t => <p key={t.id}>{formatDate(t.date)} — {t.reason} <Badge status={t.status}/></p>)}</div>}</div>
+        </div>}
       </div>
     </main>
+    <ConfirmDialog pending={pending} onConfirm={confirmPending} onCancel={() => setPending(null)} cancelRef={cancelRef}/>
   </div>;
 }
