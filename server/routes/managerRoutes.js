@@ -72,7 +72,7 @@ router.get("/dashboard", (req, res) => {
       SELECT COUNT(*) AS total
       FROM users u
       JOIN roles r ON r.id = u.role_id
-      WHERE LOWER(r.name) = 'therapist'
+      WHERE LOWER(r.name) = 'massage therapist'
         AND u.is_active = 1
     `).get().total;
 
@@ -240,7 +240,7 @@ router.get("/therapists", (req, res) => {
       FROM users u
       JOIN roles r ON r.id = u.role_id
       LEFT JOIN therapist_profiles p ON p.user_id = u.id
-      WHERE LOWER(r.name) = 'therapist'
+      WHERE LOWER(r.name) = 'massage therapist'
       ORDER BY u.last_name, u.first_name
     `).all();
 
@@ -265,7 +265,7 @@ router.patch("/therapists/:id/status", (req, res) => {
         SET is_active = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
           AND role_id IN (
-            SELECT id FROM roles WHERE LOWER(name) = 'therapist'
+            SELECT id FROM roles WHERE LOWER(name) = 'massage therapist'
           )
       `).run(Number(req.body.is_active), Number(req.params.id));
 

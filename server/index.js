@@ -4,6 +4,8 @@ const express = require("express");
 const cors = require("cors");
 
 const db = require("./database/db");
+const therapistRoutes = require("./routes/therapistRoutes");
+const managerRoutes = require("./routes/managerRoutes");
 
 const app = express();
 
@@ -18,7 +20,8 @@ app.use(
 );
 
 app.use(express.json());
-
+app.use("/api/therapist", therapistRoutes);
+app.use("/api/manager", managerRoutes);
 /* =========================
    HEALTH CHECK
 ========================= */
