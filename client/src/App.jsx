@@ -1,3 +1,4 @@
+﻿import TherapistPortal from "./pages/therapist/TherapistPortal";
 import {
   Routes,
   Route,
@@ -34,12 +35,11 @@ import Clients from "./pages/receptionist/Clients";
 function App() {
   const location = useLocation();
 
-  const isReceptionistPage =
-    location.pathname.startsWith("/receptionist");
+  const isStaffPage = ["/receptionist", "/therapist", "/manager"].some(prefix => location.pathname === prefix || location.pathname.startsWith(prefix + "/"));
 
   return (
     <>
-      {!isReceptionistPage && (
+      {!isStaffPage && (
         <>
           <Topbar />
           <Navbar />
@@ -117,10 +117,16 @@ function App() {
             element={<Clients />}
           />
 
+                  {/* Massage Therapist Routes */}
+          <Route path="/therapist/dashboard" element={<TherapistPortal />} />
+          <Route path="/therapist/schedule" element={<TherapistPortal />} />
+          <Route path="/therapist/appointments" element={<TherapistPortal />} />
+          <Route path="/therapist/notes" element={<TherapistPortal />} />
+          <Route path="/therapist/availability" element={<TherapistPortal />} />
         </Routes>
       </main>
 
-      {!isReceptionistPage && (
+      {!isStaffPage && (
         <>
           <Footer />
           <BackToTop />
