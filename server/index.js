@@ -6,6 +6,8 @@ const cors = require("cors");
 const db = require("./database/db");
 const therapistRoutes = require("./routes/therapistRoutes");
 const managerRoutes = require("./routes/managerRoutes");
+const authRoutes = require("./routes/authRoutes");
+const { authenticate, requireRole } = require("./middleware/auth");
 
 const app = express();
 
@@ -20,8 +22,21 @@ app.use(
 );
 
 app.use(express.json());
-app.use("/api/therapist", therapistRoutes);
-app.use("/api/manager", managerRoutes);
+app.use("/api/auth", authRoutes);
+
+app.use(
+  "/api/therapist",
+  authenticate,
+  requireRole("Massage Therapist"),
+  therapistRoutes
+);
+
+app.use(
+  "/api/manager",
+  authenticate,
+  requireRole("Spa Manager"),
+  managerRoutes
+);
 /* =========================
    HEALTH CHECK
 ========================= */
