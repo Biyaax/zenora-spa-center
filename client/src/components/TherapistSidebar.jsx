@@ -28,7 +28,6 @@ export default function TherapistSidebar({ mobileOpen, onClose }) {
         <div className="therapist-sidebar-footer">
           <p className="mb-1">Portal access</p>
           <strong>Massage Therapist</strong>
-          <small className="d-block mt-2">Logout will be connected by the authentication team.</small>
         </div>
       </aside>
     </>
