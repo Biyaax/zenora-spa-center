@@ -1,106 +1,15 @@
-
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { staffRequest } from "../../api/staffAuth";
-
-function ManagerDashboard() {
-  const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const token = sessionStorage.getItem("zenoraStaffToken");
-
-    if (!token) {
-      navigate("/staff/login", { replace: true });
-      return;
-    }
-
-    staffRequest("/api/manager/dashboard", token)
-      .then(setData)
-      .catch((err) => setError(err.message));
-  }, [navigate]);
-
-  const logout = () => {
-    sessionStorage.removeItem("zenoraStaffToken");
-    sessionStorage.removeItem("zenoraStaffUser");
-    navigate("/staff/login", { replace: true });
-  };
-
-  return (
-    <div className="container py-5">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Spa Manager Dashboard</h2>
-        <button className="btn btn-outline-danger" onClick={logout}>
-          Logout
-        </button>
-      </div>
-            {/* MANAGER NAVIGATION */}
-      <div className="d-flex flex-wrap gap-2 mb-4">
-        <button
-          className="btn btn-outline-primary"
-          onClick={() => navigate("/manager/services")}
-        >
-          Manage Services
-        </button>
-
-        <button
-          className="btn btn-outline-primary"
-          onClick={() => navigate("/manager/therapists")}
-        >
-          Manage Therapists
-        </button>
-
-        <button
-          className="btn btn-outline-primary"
-          onClick={() => navigate("/manager/time-off")}
-        >
-          Time-Off Requests
-        </button>
-
-        <button
-        className="btn btn-outline-primary"
-        onClick={() => navigate("/manager/reports/payments")}
-        >
-          Payment Reports
-        </button>
-
-        <button
-        className="btn btn-outline-primary"
-        onClick={() => navigate("/manager/activity-logs")}
-        >
-          Activity Logs
-        </button>
-
-      </div>
-      
-      {error && <p className="text-danger">{error}</p>}
-      {!data && !error && <p>Loading dashboard...</p>}
-
-      {data && (
-        <div className="row">
-          <div className="col-md-4 mb-3">
-            <div className="bg-light p-4 rounded">
-              <h5>Appointments</h5>
-              <h2>{data.dashboard?.appointments ?? 0}</h2>
-            </div>
-          </div>
-          <div className="col-md-4 mb-3">
-            <div className="bg-light p-4 rounded">
-              <h5>Active Services</h5>
-              <h2>{data.dashboard?.activeServices ?? 0}</h2>
-            </div>
-          </div>
-          <div className="col-md-4 mb-3">
-            <div className="bg-light p-4 rounded">
-              <h5>Therapists</h5>
-              <h2>{data.dashboard?.therapists ?? 0}</h2>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+import { Link } from 'react-router-dom';
+import { getManager, peso, dateText, personName, localYMD } from '../../components/manager/api';
+import { Card, DataTable, EmptyState, ErrorState, Loading, Notice, PageHeader, StatCard, StatusBadge, useLoad } from '../../components/manager/UI';
+export default function ManagerDashboard(){
+  const {data,loading,error,retry}=useLoad(async()=>{ const [stats,requests,payments]=await Promise.allSettled([getManager('/dashboard'),getManager('/time-off'),getManager('/reports/payments')]); if(stats.status==='rejected')throw stats.reason;return {d:stats.value.dashboard||{},requests:requests.status==='fulfilled'?(requests.value.requests||[]):null,payments:payments.status==='fulfilled'?(payments.value.payments||[]):null};},[]);
+  const d=data?.d||{}, today=localYMD(new Date()), pending=(data?.requests||[]).filter(r=>String(r.status).toLowerCase()==='pending');
+  const todaysRevenue=data?.payments===null?null:data?.payments?.filter(p=>String(p.paid_at||'').slice(0,10)===today).reduce((s,p)=>s+Number(p.amount||0),0);
+  return <><PageHeader title="Spa Manager Dashboard" subtitle="A clear view of your spa's daily operations." />
+    {error&&<ErrorState message={error} onRetry={retry}/>}{loading&&<Loading/>}{!loading&&!error&&<>
+      <div className="zm-stats-grid"><StatCard label="Appointments" value={d.appointments??'—'} icon="fa-calendar-alt"/><StatCard label="Active Services" value={d.activeServices??'—'} icon="fa-spa"/><StatCard label="Therapists" value={d.therapists??'—'} icon="fa-users"/><StatCard label="Pending Time-Off" value={data.requests?pending.length:(d.pendingTimeOff??'—')} icon="fa-clock"/><StatCard label="Today's Bookings" value="—" icon="fa-calendar-day" note="Booking feed not exposed by Manager API"/><StatCard label="Today's Revenue" value={todaysRevenue===null?'—':peso(todaysRevenue)} icon="fa-coins" note="Based on available recorded payments"/></div>
+      <div className="zm-panels"><Card><div className="zm-card-head"><h2>Therapist Workload</h2><span className="zm-mini-pill">This week</span></div><EmptyState title="Workload data not yet available" description="A booking-by-therapist endpoint is needed to show weekly assignments."/></Card><Card><div className="zm-card-head"><h2>Pending Time-Off</h2><Link className="zm-text-link" to="/manager/time-off">View all requests</Link></div>{!data.requests?<Notice>Time-off requests could not be loaded.</Notice>:pending.length?<div className="zm-list">{pending.slice(0,5).map(r=><div className="zm-list-item" key={r.id}><div><strong>{personName(r)}</strong><span>{dateText(r.start_date)}{r.end_date!==r.start_date?' – '+dateText(r.end_date):''}</span></div><StatusBadge value={r.status}/></div>)}</div>:<EmptyState title="No pending requests" description="New therapist requests will appear here."/>}</Card></div>
+      <Card><div className="zm-card-head"><h2>Recent Bookings</h2><span className="zm-small">Latest 5</span></div><EmptyState title="Bookings feed not available yet" description="Existing Manager API supplies appointment totals, not the five latest appointment records. No mock bookings are shown."/></Card>
+    </>}
+  </>;
 }
-
-export default ManagerDashboard;

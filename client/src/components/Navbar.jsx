@@ -188,6 +188,13 @@ function Navbar() {
 
               {/* Mobile Account */}
               <div className="d-lg-none mt-3">
+                <NavLink
+                  to="/staff/login"
+                  className="btn btn-outline-primary btn-block mb-2"
+                >
+                  <i className="fa fa-user-lock mr-2" aria-hidden="true"></i>
+                  Staff Login
+                </NavLink>
                 {!isLoggedIn ? (
                   <button
                     type="button"
@@ -220,7 +227,14 @@ function Navbar() {
             </div>
 
             {/* Desktop Account */}
-            <div className="d-none d-lg-block">
+            <div className="d-none d-lg-flex align-items-center">
+              <NavLink
+                to="/staff/login"
+                className="btn btn-outline-primary mr-2"
+              >
+                <i className="fa fa-user-lock mr-2" aria-hidden="true"></i>
+                Staff Login
+              </NavLink>
               {!isLoggedIn ? (
                 <button
                   type="button"

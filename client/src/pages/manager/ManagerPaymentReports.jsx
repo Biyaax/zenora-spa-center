@@ -1,102 +1,21 @@
-
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { staffRequest } from "../../api/staffAuth";
-
-export default function ManagerPaymentReports() {
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadPayments() {
-      try {
-        const token = sessionStorage.getItem("zenoraStaffToken");
-
-        const data = await staffRequest(
-          "/api/manager/reports/payments",
-          token
-        );
-
-        if (active) {
-          setPayments(data.payments || []);
-        }
-      } catch (err) {
-        if (active) {
-          setError(err.message || "Unable to load payment reports.");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadPayments();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const formatAmount = (amount) =>
-    new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(Number(amount) || 0);
-
-  return (
-    <div className="container py-5">
-      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-        <h2>Payment Reports</h2>
-
-        <Link
-          to="/manager/dashboard"
-          className="btn btn-outline-primary"
-        >
-          Back to Dashboard
-        </Link>
-      </div>
-
-      {error && (
-        <div className="alert alert-danger">{error}</div>
-      )}
-
-      {loading ? (
-        <p>Loading payment reports...</p>
-      ) : !error && payments.length === 0 ? (
-        <p>No payment records found.</p>
-      ) : !error && (
-        <div className="table-responsive">
-          <table className="table table-bordered table-striped">
-            <thead>
-              <tr>
-                <th>Payment ID</th>
-                <th>Appointment ID</th>
-                <th>Amount</th>
-                <th>Payment Method</th>
-                <th>Reference Number</th>
-                <th>Date Paid</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <td>{payment.id}</td>
-                  <td>{payment.appointment_id}</td>
-                  <td>{formatAmount(payment.amount)}</td>
-                  <td>{payment.payment_method || "N/A"}</td>
-                  <td>{payment.reference_number || "N/A"}</td>
-                  <td>{payment.paid_at || "N/A"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+import { useMemo, useState } from 'react';
+import { getManager, peso, dateText, localYMD } from '../../components/manager/api';
+import { Button, Card, DataTable, EmptyState, ErrorState, Loading, Notice, PageHeader, StatCard, useLoad, useToast } from '../../components/manager/UI';
+const quote=v=>{const raw=String(v??'');const safe=/^[=+@-]/.test(raw)?"'"+raw:raw;return `"${safe.replaceAll('\"','\"\"')}"`;};
+function downloadCsv(rows){const lines=[['Date Paid','Amount (PHP)','Payment Method','Reference'],...rows.map(p=>[p.paid_at||'',p.amount||0,p.payment_method||'',p.reference_number||''])];const blob=new Blob(['\uFEFF'+lines.map(row=>row.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='zenora-revenue-report.csv';a.click();URL.revokeObjectURL(url);}
+export default function ManagerPaymentReports(){
+ const [period,setPeriod]=useState('Daily'),[anchor,setAnchor]=useState(localYMD(new Date())),[tab,setTab]=useState('Revenue Report');
+ const {data,loading,error,retry}=useLoad(()=>getManager('/reports/payments'),[]),payments=data?.payments||[];
+ const included=useMemo(()=>payments.filter(p=>{const raw=String(p.paid_at||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(raw))return false;const selected=new Date(anchor+'T12:00:00'),date=new Date(raw+'T12:00:00');if(period==='Daily')return raw===anchor;if(period==='Monthly')return raw.slice(0,7)===anchor.slice(0,7);const start=new Date(selected);start.setDate(start.getDate()-((start.getDay()+6)%7));const end=new Date(start);end.setDate(start.getDate()+7);return date>=start&&date<end;}),[payments,period,anchor]);
+ const total=included.reduce((v,p)=>v+Number(p.amount||0),0);const byDay=Object.entries(included.reduce((obj,p)=>{const date=String(p.paid_at).slice(0,10);obj[date]=(obj[date]||0)+Number(p.amount||0);return obj;},{})).sort(([a],[b])=>a.localeCompare(b));const max=Math.max(1,...byDay.map(([,v])=>v));
+ return <><PageHeader title="Reports" subtitle="Monitor bookings and recorded payments, without payroll or inventory features." action={<div className="zm-actions"><Button kind="outline" onClick={()=>window.print()}><i className="fa fa-print"/> Print</Button><Button onClick={()=>downloadCsv(included)} disabled={!included.length}><i className="fa fa-file-csv"/> Export CSV</Button></div>}/>
+ <Card><div className="zm-toolbar"><div className="zm-tabs" role="tablist">{['Daily','Weekly','Monthly'].map(x=><button key={x} role="tab" aria-selected={period===x} className={period===x?'selected':''} onClick={()=>setPeriod(x)}>{x}</button>)}</div><label>Reference date<input type="date" value={anchor} onChange={e=>setAnchor(e.target.value)}/></label></div>
+ <Notice>The backend currently supplies manually recorded payments (latest 200), not complete booking/service report endpoints. Revenue below is calculated only from those returned payments, so it may not represent all historical payments.</Notice>
+ {error&&<ErrorState message={error} onRetry={retry}/>} {loading?<Loading/>:!error&&<><div className="zm-stats-grid compact"><StatCard label="Total Bookings" value="—" icon="fa-calendar-alt" note="Booking report API needed"/><StatCard label="Completed" value="—" icon="fa-check-circle" note="Booking status API needed"/><StatCard label="Cancelled / No-Show" value="—" icon="fa-times-circle" note="Booking status API needed"/><StatCard label="Recorded Revenue" value={peso(total)} icon="fa-coins" note={`${included.length} payments in selected period`}/></div>
+ <div className="zm-tabs" role="tablist">{['Booking Report','Service Report','Revenue Report'].map(t=><button role="tab" aria-selected={tab===t} key={t} className={tab===t?'selected':''} onClick={()=>setTab(t)}>{t}</button>)}</div>
+ {tab==='Booking Report'?<EmptyState title="Booking report not available" description="Needs date, status and therapist information from a Manager bookings endpoint."/>:tab==='Service Report'?<EmptyState title="Service report not available" description="Needs bookings and payments grouped by service from the backend."/>:<>
+ <div className="zm-card-head"><h2>Recorded Revenue</h2><span>{peso(total)}</span></div>{byDay.length?<div className="zm-chart" aria-label="Daily recorded revenue chart">{byDay.map(([date,value])=><div className="zm-bar-item" key={date}><span>{dateText(date)}</span><div className="zm-bar-track"><div style={{width:`${value/max*100}%`}}/></div><strong>{peso(value)}</strong></div>)}</div>:<EmptyState title="No recorded payments in this period"/>}
+ <DataTable headers={['Date','Method','Reference','Amount']} empty="No payment transactions found">{included.map(p=><tr key={p.id}><td>{dateText(p.paid_at)}</td><td>{p.payment_method||'Unspecified'}</td><td>{p.reference_number||'Not provided'}</td><td><strong>{peso(p.amount)}</strong></td></tr>)}</DataTable>
+ </>}
+ </>}</Card></>;
 }
