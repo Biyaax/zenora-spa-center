@@ -5,12 +5,61 @@ const cors = require("cors");
 
 const config = require("./config");
 const db = require("./database/postgres");
-const { HttpError } = require("./lib/errors");
-const { startReminderScheduler } = require("./services/reminders");
-const { requireAuth, requireRole } = require("./middleware/auth");
 
-const therapistRoutes = require("./routes/therapistRoutes");
-const managerRoutes = require("./routes/managerRoutes");
+const {
+  HttpError,
+} = require("./lib/errors");
+
+const {
+  startReminderScheduler,
+} = require("./services/reminders");
+
+const {
+  requireAuth,
+  requireRole,
+} = require("./middleware/auth");
+
+const therapistRoutes = require(
+  "./routes/therapistRoutes"
+);
+
+const managerRoutes = require(
+  "./routes/managerRoutes"
+);
+
+const managerStaffRoutes = require(
+  "./routes/managerStaff"
+);
+
+const managerActivityLogsRoutes =
+  require(
+    "./routes/managerActivityLogs"
+  );
+
+const receptionDashboardRoutes =
+  require(
+    "./routes/receptionDashboard"
+  );
+
+const receptionBookingsRoutes =
+  require(
+    "./routes/receptionBookings"
+  );
+
+const receptionCheckInOutRoutes =
+  require(
+    "./routes/receptionCheckInOut"
+  );
+
+const receptionPaymentsRoutes =
+  require(
+    "./routes/receptionPayments"
+  );
+
+const receptionClientsRoutes =
+  require(
+    "./routes/receptionClients"
+  );
 
 const app = express();
 
@@ -18,48 +67,54 @@ const app = express();
    CORS
 ========================= */
 
-const allowedOrigins = new Set([
-  "http://localhost:5173",
-  "https://zenora-spa-center.vercel.app",
-]);
+const allowedOrigins =
+  new Set([
+    "https://zenora-spa-center.vercel.app",
+  ]);
 
-// Keep supporting CLIENT_URL from Vercel/environment variables.
 if (config.clientUrl) {
   allowedOrigins.add(
-    String(config.clientUrl).replace(/\/$/, "")
+    String(
+      config.clientUrl
+    ).replace(/\/$/, "")
   );
 }
 
 function isAllowedOrigin(origin) {
-  // Requests such as server-to-server calls may not have an Origin.
   if (!origin) {
     return true;
   }
 
-  // Explicitly allowed URLs.
-  if (allowedOrigins.has(origin)) {
+  if (
+    allowedOrigins.has(origin)
+  ) {
     return true;
   }
 
   try {
-    const url = new URL(origin);
+    const url =
+      new URL(origin);
 
-    /*
-     * Allow Zenora frontend Preview deployments such as:
-     *
-     * https://zenora-spa-center-nphq0qrfn-biyaaxs-projects.vercel.app
-     * https://zenora-spa-center-rcmmrig73-biyaaxs-projects.vercel.app
-     *
-     * This prevents us from changing CLIENT_URL every time
-     * Vercel creates a new Preview deployment.
-     */
+    const isLocalhost =
+      url.protocol === "http:" &&
+      (
+        url.hostname ===
+          "localhost" ||
+        url.hostname ===
+          "127.0.0.1"
+      );
+
+    if (isLocalhost) {
+      return true;
+    }
+
     const isZenoraPreview =
       url.protocol === "https:" &&
-      url.hostname.endsWith(
-        "-biyaaxs-projects.vercel.app"
-      ) &&
       url.hostname.startsWith(
         "zenora-spa-center-"
+      ) &&
+      url.hostname.endsWith(
+        "-biyaaxs-projects.vercel.app"
       );
 
     return isZenoraPreview;
@@ -70,9 +125,17 @@ function isAllowedOrigin(origin) {
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        return callback(null, true);
+    origin(
+      origin,
+      callback
+    ) {
+      if (
+        isAllowedOrigin(origin)
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       console.warn(
@@ -80,53 +143,135 @@ app.use(
       );
 
       return callback(
-        new Error("Not allowed by CORS")
+        new Error(
+          "Not allowed by CORS"
+        )
       );
     },
   })
 );
 
-app.use(express.json({ limit: "100kb" }));
+app.use(
+  express.json({
+    limit: "100kb",
+  })
+);
 
 /* =========================
    HEALTH CHECK
 ========================= */
 
-app.get("/api/health", async (req, res) => {
-  const serviceResult = await db.query(`
-    SELECT COUNT(*)::INTEGER AS count
-    FROM services
-  `);
+app.get(
+  "/api/health",
+  async (req, res) => {
+    const serviceResult =
+      await db.query(`
+        SELECT
+          COUNT(*)::INTEGER
+            AS count
+        FROM services
+      `);
 
-  const roleResult = await db.query(`
-    SELECT COUNT(*)::INTEGER AS count
-    FROM roles
-  `);
+    const roleResult =
+      await db.query(`
+        SELECT
+          COUNT(*)::INTEGER
+            AS count
+        FROM roles
+      `);
 
-  res.json({
-    success: true,
-    message: "Zenora API is running.",
-    database: "connected",
-    services: serviceResult.rows[0].count,
-    roles: roleResult.rows[0].count,
-  });
-});
+    return res.json({
+      success: true,
+
+      message:
+        "Zenora API is running.",
+
+      database:
+        "connected",
+
+      services:
+        serviceResult
+          .rows[0].count,
+
+      roles:
+        roleResult
+          .rows[0].count,
+    });
+  }
+);
 
 /* =========================
-   SHARED ROUTES
+   PUBLIC / SHARED
 ========================= */
 
-// Public: services, packages, therapists, hours, availability
-app.use("/api", require("./routes/catalog"));
+app.use(
+  "/api",
+  require("./routes/catalog")
+);
 
-// Register / login / current user for all roles
-app.use("/api/auth", require("./routes/auth"));
+app.use(
+  "/api/auth",
+  require("./routes/auth")
+);
 
-// Guest
-app.use("/api/me", require("./routes/guest"));
+app.use(
+  "/api/me",
+  require("./routes/guest")
+);
 
-// Receptionist
-app.use("/api/reception", require("./routes/reception"));
+/* =========================
+   RECEPTIONIST
+========================= */
+
+app.use(
+  "/api/reception/dashboard",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionDashboardRoutes
+);
+
+app.use(
+  "/api/reception/bookings",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionBookingsRoutes
+);
+
+app.use(
+  "/api/reception/check-in-out",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionCheckInOutRoutes
+);
+
+app.use(
+  "/api/reception/payments",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionPaymentsRoutes
+);
+
+app.use(
+  "/api/reception/clients",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionClientsRoutes
+);
+
+app.use(
+  "/api/reception",
+  require("./routes/reception")
+);
 
 /* =========================
    THERAPIST
@@ -135,7 +280,9 @@ app.use("/api/reception", require("./routes/reception"));
 app.use(
   "/api/therapist",
   requireAuth,
-  requireRole("Massage Therapist"),
+  requireRole(
+    "Massage Therapist"
+  ),
   therapistRoutes
 );
 
@@ -143,18 +290,45 @@ app.use(
    MANAGER
 ========================= */
 
-/* Manager Staff Account and Schedule Management */
+/*
+  Staff management.
+*/
 app.use(
   "/api/manager",
   requireAuth,
-  requireRole("Spa Manager"),
-  require("./routes/managerStaff")
+  requireRole(
+    "Spa Manager"
+  ),
+  managerStaffRoutes
 );
 
+/*
+  Activity logs.
+
+  IMPORTANT:
+  This comes BEFORE managerRoutes
+  because managerRoutes still has
+  the old /activity-logs endpoint.
+*/
+app.use(
+  "/api/manager/activity-logs",
+  requireAuth,
+  requireRole(
+    "Spa Manager"
+  ),
+  managerActivityLogsRoutes
+);
+
+/*
+  Dashboard, services,
+  time-off and reports.
+*/
 app.use(
   "/api/manager",
   requireAuth,
-  requireRole("Spa Manager"),
+  requireRole(
+    "Spa Manager"
+  ),
   managerRoutes
 );
 
@@ -162,64 +336,101 @@ app.use(
    404
 ========================= */
 
-app.use("/api", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Not found.",
-  });
-});
+app.use(
+  "/api",
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        success: false,
+        message:
+          "Not found.",
+      });
+  }
+);
 
 /* =========================
    ERRORS
 ========================= */
 
 // eslint-disable-next-line no-unused-vars
-app.use((error, req, res, next) => {
-  if (error instanceof HttpError) {
-    return res.status(error.status).json({
-      success: false,
-      message: error.message,
-      details: error.details,
-    });
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    if (
+      error instanceof
+      HttpError
+    ) {
+      return res
+        .status(error.status)
+        .json({
+          success: false,
+          message:
+            error.message,
+          details:
+            error.details,
+        });
+    }
+
+    if (
+      error.type ===
+      "entity.parse.failed"
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message:
+            "The request body is not valid JSON.",
+        });
+    }
+
+    if (
+      error.message ===
+      "Not allowed by CORS"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message:
+            "This website is not allowed to access the Zenora API.",
+        });
+    }
+
+    console.error(error);
+
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message:
+          "Something went wrong on our side. Please try again.",
+      });
   }
-
-  if (error.type === "entity.parse.failed") {
-    return res.status(400).json({
-      success: false,
-      message: "The request body is not valid JSON.",
-    });
-  }
-
-  if (error.message === "Not allowed by CORS") {
-    return res.status(403).json({
-      success: false,
-      message: "This website is not allowed to access the Zenora API.",
-    });
-  }
-
-  console.error(error);
-
-  return res.status(500).json({
-    success: false,
-    message:
-      "Something went wrong on our side. Please try again.",
-  });
-});
+);
 
 /* =========================
    LOCAL SERVER
 ========================= */
 
-if (require.main === module) {
-  app.listen(config.port, () => {
-    console.log(
-      `Zenora server running on http://localhost:${config.port}`
-    );
+if (
+  require.main === module
+) {
+  app.listen(
+    config.port,
+    () => {
+      console.log(
+        `Zenora server running on http://localhost:${config.port}`
+      );
 
-    // Local development only.
-    // Vercel should not rely on a persistent setInterval scheduler.
-    startReminderScheduler();
-  });
+      startReminderScheduler();
+    }
+  );
 }
 
 module.exports = app;
