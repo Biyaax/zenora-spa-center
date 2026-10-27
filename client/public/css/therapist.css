@@ -83,3 +83,79 @@
 @media(max-width:900px){.therapist-sidebar{transform:translateX(-100%)}.therapist-sidebar.open{transform:translateX(0)}.therapist-overlay{display:block;position:fixed;inset:0;z-index:999;background:#0000008c;border:0}.therapist-main{margin-left:0;width:100%}.therapist-topbar{justify-content:space-between;padding:10px 20px;height:75px}.therapist-menu-btn{display:grid;place-items:center;width:40px;height:40px;border:1px solid #ded6d0;background:white;cursor:pointer;color:#44372f}.therapist-content{padding:23px 20px}}
 @media(max-width:580px){.therapist-content{padding:19px 12px}.therapist-topbar{padding:9px 12px}.therapist-panel{padding:19px 15px}.therapist-intro h1{font-size:24px}.therapist-stats{grid-template-columns:1fr 1fr;gap:10px}.therapist-stat{padding:16px 12px}.therapist-stat h2{font-size:24px}.therapist-stat>span{width:34px;height:34px;font-size:16px}.therapist-stat p{font-size:11px}.therapist-user-text{max-width:125px}.therapist-user-text strong{font-size:12px}.therapist-user-text small{font-size:10px}.therapist-avatar{width:35px;height:35px}.therapist-detail-pairs,.therapist-notes-summary .therapist-detail-pairs{grid-template-columns:1fr}.therapist-notes-summary .therapist-detail-pairs>div{grid-column:auto}.therapist-modal{padding:19px 16px}.therapist-calendar.week{min-width:1180px}.therapist-filter-bar,.therapist-calendar-controls{align-items:stretch}.therapist-filter-bar label{width:100%}.therapist-panel-title{align-items:flex-start}.therapist-request{flex-wrap:wrap}.therapist-hours-row,.therapist-hours-header{grid-template-columns:37px 60px minmax(0,1fr) minmax(0,1fr);gap:6px}.therapist-hours-row input[type=time]{font-size:10px;padding:8px 2px}.therapist-hours-header{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.therapist-sidebar,.therapist-nav-link,.therapist-btn{transition:none}}
+
+/* v2 — Match Spa Manager chrome without changing Therapist v7 workflows. */
+.therapist-sidebar{width:258px;background:#211d1b;z-index:1000}
+.therapist-sidebar-brand{display:block;min-height:92px;padding:23px 25px 27px;border-bottom:1px solid #38302f;color:#f9a593!important;text-decoration:none!important;font-size:25px;font-weight:800;letter-spacing:1px;line-height:1.1}
+.therapist-sidebar-brand:hover{color:#f9a593!important;text-decoration:none!important}
+.therapist-sidebar-brand span{display:block;margin-top:11px;color:#b9aca6;font-size:9px;font-weight:600;letter-spacing:2px}
+.therapist-sidebar-caption{font-size:10px;color:#a39790;font-weight:700;letter-spacing:1.8px;padding:32px 27px 13px}
+.therapist-nav{padding:0 10px;display:flex;flex-direction:column;gap:5px;overflow-y:auto;flex:1}
+.therapist-nav-link{border-radius:5px;margin-bottom:0;gap:14px;padding:13px 15px;color:#e3dbd8!important;font-size:12px;font-weight:600;line-height:1.6}
+.therapist-nav-link i{width:18px;text-align:center;font-size:15px}
+.therapist-nav-link:hover{background:#39312f;color:#fff!important}
+.therapist-nav-link.active{background:#f9a593;color:#241a17!important}
+.therapist-sidebar-foot{margin-top:auto;padding:22px 24px;border-top:1px solid #38302f;color:#ac9d96;font-size:10px;letter-spacing:.5px}
+.therapist-main{margin-left:258px;width:calc(100% - 258px)}
+.therapist-topbar{height:77px;min-height:77px;padding:0 32px;gap:20px;justify-content:initial;position:sticky;top:0;z-index:45;border-bottom:1px solid #ede7e3}
+.therapist-workspace-label{color:#716966;font-size:13px;font-weight:600}
+.therapist-user-menu-wrap{margin-left:auto}
+.therapist-account-trigger{padding:5px 9px;min-height:50px}
+.therapist-account-menu{width:182px}
+.therapist-content{padding:33px 34px 65px;max-width:1550px}
+.therapist-layout .therapist-sidebar-brand:focus-visible{outline:3px solid #c15b47;outline-offset:-3px}
+@media(max-width:900px){
+  .therapist-main{margin-left:0;width:100%}
+  .therapist-topbar{height:70px;min-height:70px;padding:0 17px}
+  .therapist-content{padding:26px 18px 48px}
+  .therapist-menu-btn{display:grid;border:0;min-width:38px;height:38px;border-radius:5px;background:transparent}
+  .therapist-menu-btn:hover{background:#f5eae6}
+}
+@media(max-width:580px){
+  .therapist-content{padding:19px 12px}
+  .therapist-topbar{padding:0 12px;gap:10px}
+  .therapist-workspace-label{display:none}
+}
+
+
+/* v3: identical sidebar hierarchy to Spa Manager, explicitly overriding legacy Therapist rules. */
+.therapist-layout .therapist-sidebar {
+  width:258px; background:#211d1b; height:100dvh;
+  display:flex; flex-direction:column; overflow-y:auto;
+}
+.therapist-layout .therapist-sidebar-brand {
+  display:block; min-height:unset; padding:23px 25px 27px;
+  border-bottom:1px solid #38302f; color:#F9A593!important;
+  line-height:1.1; font-size:25px; font-weight:800;
+  letter-spacing:1px; text-decoration:none!important;
+}
+.therapist-layout .therapist-sidebar-brand span {
+  display:block!important; margin-top:11px; color:#b9aca6!important;
+  font-size:9px!important; font-weight:600; line-height:1.5;
+  letter-spacing:2px; text-transform:uppercase; visibility:visible!important;
+}
+.therapist-layout .therapist-sidebar-caption {
+  display:block!important; padding:32px 27px 13px;
+  color:#a39790!important; font-size:10px; font-weight:700;
+  letter-spacing:1.8px; visibility:visible!important;
+}
+.therapist-layout .therapist-nav {
+  flex:0 1 auto; display:flex; flex-direction:column; gap:5px;
+  padding:0 10px; overflow-y:visible;
+}
+.therapist-layout .therapist-nav-link {
+  margin:0; padding:13px 15px; border-radius:5px;
+  font-size:12px; font-weight:600; gap:14px;
+}
+.therapist-layout .therapist-nav-link i {
+  width:18px; font-size:15px; text-align:center;
+}
+.therapist-layout .therapist-sidebar-foot {
+  display:block!important; flex-shrink:0; margin-top:auto;
+  padding:22px 24px; border-top:1px solid #38302f;
+  color:#ac9d96!important; font-size:10px; letter-spacing:.5px;
+  visibility:visible!important;
+}
+@media (max-width:900px) {
+  .therapist-layout .therapist-sidebar { width:258px; }
+}

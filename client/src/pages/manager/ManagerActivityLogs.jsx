@@ -1,111 +1,16 @@
-
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { staffRequest } from "../../api/staffAuth";
-
-export default function ManagerActivityLogs() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadLogs() {
-      try {
-        const token = sessionStorage.getItem("zenoraStaffToken");
-
-        const data = await staffRequest(
-          "/api/manager/activity-logs",
-          token
-        );
-
-        if (active) {
-          setLogs(data.logs || []);
-        }
-      } catch (err) {
-        if (active) {
-          setError(err.message || "Unable to load activity logs.");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadLogs();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return (
-    <div className="container py-5">
-      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-        <h2>Activity Logs</h2>
-
-        <Link
-          to="/manager/dashboard"
-          className="btn btn-outline-primary"
-        >
-          Back to Dashboard
-        </Link>
-      </div>
-
-      {error && (
-        <div className="alert alert-danger">{error}</div>
-      )}
-
-      {loading ? (
-        <p>Loading activity logs...</p>
-      ) : !error && logs.length === 0 ? (
-        <p>No activity logs found.</p>
-      ) : !error && (
-        <div className="table-responsive">
-          <table className="table table-bordered table-striped">
-            <thead>
-              <tr>
-                <th>Log ID</th>
-                <th>User ID</th>
-                <th>Action</th>
-                <th>Entity Type</th>
-                <th>Entity ID</th>
-                <th>Details</th>
-                <th>Date and Time</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {logs.map((log) => (
-                <tr key={log.id}>
-                  <td>{log.id}</td>
-                  <td>{log.user_id ?? "N/A"}</td>
-                  <td>{log.action || "N/A"}</td>
-                  <td>{log.entity_type || "N/A"}</td>
-                  <td>{log.entity_id ?? "N/A"}</td>
-                  <td>
-                    <pre
-                      style={{
-                        whiteSpace: "pre-wrap",
-                        overflowWrap: "anywhere",
-                        margin: 0,
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {typeof log.details === "string"
-                        ? log.details
-                        : JSON.stringify(log.details ?? "")}
-                    </pre>
-                  </td>
-                  <td>{log.created_at || "N/A"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+import { useMemo, useState } from 'react';
+import { getManager, dateTimeText, personName, titleCase } from '../../components/manager/api';
+import { Button, Card, DataTable, EmptyState, ErrorState, Loading, PageHeader, useLoad } from '../../components/manager/UI';
+function actionDescription(log){const entity=String(log.entity_type||'').replaceAll('_',' '),action=String(log.action||'').toLowerCase();let details={};try{details=typeof log.details==='string'?JSON.parse(log.details||'{}'):(log.details||{});}catch{};if(entity==='time off'&&action==='review')return `Spa Manager ${details.status==='approved'?'approved':details.status==='rejected'?'rejected':'reviewed'} a time-off request`;if(entity==='service'&&action==='create')return 'Spa Manager added a service';if(entity==='service'&&action==='update')return 'Spa Manager updated a service';if(entity==='therapist'&&action.includes('status'))return `Spa Manager ${Number(details.is_active)?'activated':'deactivated'} a therapist account`;return `${titleCase(action)||'Staff action'}${entity?' · '+titleCase(entity):''}`;}
+export default function ManagerActivityLogs(){
+ const [search,setSearch]=useState(''),[action,setAction]=useState('All'),[user,setUser]=useState('All'),[from,setFrom]=useState(''),[to,setTo]=useState(''),[page,setPage]=useState(1);
+ const {data,loading,error,retry}=useLoad(async()=>{const [logs,staff]=await Promise.allSettled([getManager('/activity-logs'),getManager('/therapists')]);if(logs.status==='rejected')throw logs.reason;return {logs:logs.value.logs||[],therapists:staff.status==='fulfilled'?(staff.value.therapists||[]):[]};},[]),rows=data?.logs||[];
+ const staffMap=new Map((data?.therapists||[]).map(p=>[String(p.id),personName(p)]));let manager={};try{manager=JSON.parse(sessionStorage.getItem('zenoraStaffUser')||'{}');}catch{}
+ const byName=r=>staffMap.get(String(r.user_id)) || (String(manager?.id)===String(r.user_id)&&manager?.id?personName(manager):'Staff member (name unavailable)');
+ const actions=['All',...new Set(rows.map(r=>titleCase(r.action||'Unknown')))],users=['All',...new Set(rows.map(byName))];
+ const filtered=useMemo(()=>rows.filter(r=>{const day=String(r.created_at||'').slice(0,10);return(action==='All'||titleCase(r.action||'Unknown')===action)&&(user==='All'||byName(r)===user)&&(!from||day>=from)&&(!to||day<=to)&&(`${byName(r)} ${actionDescription(r)} ${r.entity_type||''}`.toLowerCase().includes(search.toLowerCase()));}),[rows,search,action,user,from,to]);const pages=Math.max(1,Math.ceil(filtered.length/10)),view=filtered.slice((Math.min(page,pages)-1)*10,Math.min(page,pages)*10);const change=(fn)=>e=>{fn(e.target.value);setPage(1);};
+ return <><PageHeader title="Activity Logs" subtitle="A readable history of staff and operational changes."/>
+ <Card><div className="zm-toolbar zm-log-filters"><label>Search<input value={search} onChange={change(setSearch)} placeholder="Search staff or activity"/></label><label>Action<select value={action} onChange={change(setAction)}>{actions.map(s=><option key={s}>{s}</option>)}</select></label><label>Staff member<select value={user} onChange={change(setUser)}>{users.map(s=><option key={s}>{s}</option>)}</select></label><label>From<input type="date" value={from} onChange={change(setFrom)}/></label><label>To<input type="date" value={to} onChange={change(setTo)}/></label></div>
+ {error&&<ErrorState message={error} onRetry={retry}/>} {loading?<Loading/>:!error&&<><DataTable headers={['Who','What','Date and time','Details']} empty="No matching activities">{view.map(r=>{let details=r.details;try{details=typeof details==='string'?JSON.parse(details):details;}catch{};const hasDetails=details&&typeof details==='object'?Object.keys(details).length>0:!!details;return <tr key={r.id}><td><strong>{byName(r)}</strong><div className="zm-small">{String(manager?.id)===String(r.user_id)?'Spa Manager':staffMap.has(String(r.user_id))?'Massage Therapist':'Role unavailable'}</div></td><td>{actionDescription(r)}</td><td>{dateTimeText(r.created_at)}</td><td>{hasDetails?<details><summary>View details</summary><pre className="zm-details">{typeof details==='object'?JSON.stringify(details,null,2):String(details)}</pre></details>:<span className="zm-small">No additional details</span>}</td></tr>;})}</DataTable><div className="zm-pagination"><span>Showing {filtered.length?((Math.min(page,pages)-1)*10+1):0}–{Math.min(Math.min(page,pages)*10,filtered.length)} of {filtered.length}</span><Button kind="outline" disabled={page<=1} onClick={()=>setPage(x=>x-1)}>Previous</Button><span>Page {Math.min(page,pages)} of {pages}</span><Button kind="outline" disabled={page>=pages} onClick={()=>setPage(x=>x+1)}>Next</Button></div></>}
+ </Card></>;
 }
