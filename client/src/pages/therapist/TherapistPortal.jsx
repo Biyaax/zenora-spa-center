@@ -339,7 +339,7 @@ function ProfilePage({name,role,staff,onLogout,toast}) {
 }
 export default function TherapistPortal() {
   const location=useLocation(), navigate=useNavigate();
-  const {user,logout}=useAuth();
+  const {user}=useAuth();
   const role=String(user?.role||"").toLowerCase().replace(/[_-]/g," ").trim();
   const authenticatedTherapist=["therapist","massage therapist"].includes(role);
   const staffName=authenticatedTherapist ? String(user?.fullName||user?.name||[user?.firstName,user?.lastName].filter(Boolean).join(" ")).trim()||demoStaff.name : demoStaff.name;
@@ -371,7 +371,12 @@ export default function TherapistPortal() {
   const showToast=(message,type="success")=>setToastMessage({message,type});
   const closeModal=()=>{setModal(null);setOnRequestComplete(null);};
   const currentAppointment=modal?.appointmentId?appointments.find(a=>a.id===modal.appointmentId):null;
-  const handleLogout=()=>{logout();navigate("/",{replace:true});};
+  const handleLogout=()=>{
+    // End the STAFF session; do not alter the separate Guest login session.
+    sessionStorage.removeItem("zenoraStaffToken");
+    sessionStorage.removeItem("zenoraStaffUser");
+    navigate("/", { replace: true });
+  };
   const staffDetails = authenticatedTherapist ? { ...demoStaff, email:user?.email||demoStaff.email, phone:user?.phone||demoStaff.phone, specialties:Array.isArray(user?.specialties)?user.specialties:demoStaff.specialties } : demoStaff;
   const addHistory=(a,from,to)=>setHistory(prev=>[{id:`H-${Date.now()}-${prev.length}`,booking:a.id,client:a.client,from,to,actor:`Me (${staffName})`,at:new Date().toISOString()},...prev]);
   const onDetails=a=>setModal({type:"details",appointmentId:a.id});
@@ -426,7 +431,8 @@ export default function TherapistPortal() {
   return <div className="therapist-layout">
     <TherapistSidebar mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)}/>
     <main className="therapist-main"><header className="therapist-topbar">
-      <button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Icon name="fas fa-bars"/></button>
+      <button type="button" className="therapist-menu-btn" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Icon name="fas fa-bars"/></button>
+      <span className="therapist-workspace-label">Therapist Workspace</span>
       <div className="therapist-user-menu-wrap" ref={menuRef}>
         <button className="therapist-account-trigger" type="button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={()=>setProfileOpen(v=>!v)}>
           <span className="therapist-avatar" aria-hidden="true">{staffName.charAt(0).toUpperCase()}</span><span className="therapist-user-text"><strong>{staffName}</strong><small>Massage Therapist</small></span><Icon name={profileOpen?"fas fa-chevron-up":"fas fa-chevron-down"}/>

@@ -12,9 +12,10 @@ export default function TherapistSidebar({ mobileOpen, onClose }) {
     <>
       {mobileOpen && <button className="therapist-overlay" aria-label="Close navigation" onClick={onClose} />}
       <aside className={`therapist-sidebar ${mobileOpen ? "open" : ""}`}>
-        <div className="therapist-sidebar-brand">
-          <h2 className="mb-0 text-primary">ZENORA</h2>
-        </div>
+        <NavLink to="/therapist/dashboard" className="therapist-sidebar-brand" onClick={onClose}>
+          ZENORA<span>THERAPIST PORTAL</span>
+        </NavLink>
+        <div className="therapist-sidebar-caption">WORKSPACE</div>
         <nav className="therapist-nav" aria-label="Therapist navigation">
           {items.map(([path, icon, title]) => (
             <NavLink key={path} to={path} onClick={onClose}
@@ -23,6 +24,7 @@ export default function TherapistSidebar({ mobileOpen, onClose }) {
             </NavLink>
           ))}
         </nav>
+        <div className="therapist-sidebar-foot">ZENORA · SPA & WELLNESS</div>
       </aside>
     </>
   );
