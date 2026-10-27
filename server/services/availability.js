@@ -1,5 +1,47 @@
+const db = require("../database/postgres");
+const config = require("../config");
+const time = require("../lib/time");
 
+const {
+  badRequest,
+  notFound,
+  conflict,
+} = require("../lib/errors");
 
+/**
+ * Get one active service.
+ * queryable may be the PostgreSQL pool
+ * or a PostgreSQL transaction client.
+ */
+async function getService(
+  serviceId,
+  queryable = db
+) {
+  const result = await queryable.query(
+    `
+    SELECT
+      id,
+      name,
+      description,
+      price,
+      duration_minutes,
+      image_url,
+      is_active
+    FROM services
+    WHERE id = $1
+      AND is_active = 1
+    LIMIT 1
+    `,
+    [serviceId]
+  );
+
+  return result.rows[0] || null;
+}
+
+/**
+ * Therapists who are allowed to perform
+ * a particular service.
+ */
 async function eligibleTherapists(
   serviceId,
   therapistId = null,
@@ -11,7 +53,9 @@ async function eligibleTherapists(
 
   if (therapistId) {
     params.push(therapistId);
-    extra = `AND tp.user_id = $${params.length}`;
+
+    extra =
+      `AND tp.user_id = $${params.length}`;
   }
 
   const result = await queryable.query(
@@ -39,7 +83,10 @@ async function eligibleTherapists(
   return result.rows;
 }
 
-/** Everything that decides whether a therapist is free on a date. */
+/**
+ * Everything that decides whether
+ * a therapist is free on a date.
+ */
 async function loadTherapistDay(
   therapistId,
   date,
@@ -105,24 +152,35 @@ async function loadTherapistDay(
 
   return {
     windows: windowsResult.rows,
+
     onTimeOff:
       timeOffResult.rows.length > 0,
+
     busy: busyResult.rows,
   };
 }
 
-/** Is [start, start + duration) free for this therapist on this day? */
+/**
+ * Is [start, start + duration)
+ * free for this therapist on this day?
+ */
 function therapistIsFree(
   day,
   hours,
   start,
   duration
 ) {
-  if (day.onTimeOff) return false;
+  if (day.onTimeOff) {
+    return false;
+  }
 
   const end = start + duration;
-  const open = time.toMinutes(hours[0]);
-  const close = time.toMinutes(hours[1]);
+
+  const open =
+    time.toMinutes(hours[0]);
+
+  const close =
+    time.toMinutes(hours[1]);
 
   if (
     start < open ||
@@ -131,17 +189,18 @@ function therapistIsFree(
     return false;
   }
 
-  const insideWindow = day.windows.some(
-    (window) =>
-      start >=
-        time.toMinutes(
-          window.start_time
-        ) &&
-      end <=
-        time.toMinutes(
-          window.end_time
-        )
-  );
+  const insideWindow =
+    day.windows.some(
+      (window) =>
+        start >=
+          time.toMinutes(
+            window.start_time
+          ) &&
+        end <=
+          time.toMinutes(
+            window.end_time
+          )
+    );
 
   if (!insideWindow) {
     return false;
@@ -161,10 +220,16 @@ function therapistIsFree(
 }
 
 /**
- * Earliest start (in minutes) allowed on `date`.
- * Online guests need a lead time; staff may book anything not yet over.
+ * Earliest start, in minutes,
+ * allowed on `date`.
+ *
+ * Online guests need a lead time.
+ * Staff may book anything not yet over.
  */
-function earliestStart(date, forStaff) {
+function earliestStart(
+  date,
+  forStaff
+) {
   const now = time.nowInSpa();
 
   if (date < now.date) {
@@ -176,7 +241,7 @@ function earliestStart(date, forStaff) {
   }
 
   if (forStaff) {
-    // Allow the current slot (walk-ins arrive mid-slot).
+    // Allow the current slot.
     const step =
       config.slotStepMinutes;
 
@@ -202,8 +267,17 @@ function requireValidDate(date) {
 }
 
 /**
- * Open start times for a service on a date.
- * Returns [{ start, end, therapistIds }] on the 30-minute grid.
+ * Open start times for a service
+ * on a date.
+ *
+ * Returns:
+ * [
+ *   {
+ *     start,
+ *     end,
+ *     therapistIds
+ *   }
+ * ]
  */
 async function getSlots({
   serviceId,
@@ -215,10 +289,11 @@ async function getSlots({
 }) {
   requireValidDate(date);
 
-  const service = await getService(
-    serviceId,
-    queryable
-  );
+  const service =
+    await getService(
+      serviceId,
+      queryable
+    );
 
   if (!service) {
     throw notFound(
@@ -239,15 +314,17 @@ async function getSlots({
     };
   }
 
-  const from = earliestStart(
-    date,
-    forStaff
-  );
+  const from =
+    earliestStart(
+      date,
+      forStaff
+    );
 
   const step =
     config.slotStepMinutes;
 
-  const bySlot = new Map();
+  const bySlot =
+    new Map();
 
   const therapists =
     await eligibleTherapists(
@@ -256,7 +333,10 @@ async function getSlots({
       queryable
     );
 
-  for (const therapist of therapists) {
+  for (
+    const therapist
+    of therapists
+  ) {
     const day =
       await loadTherapistDay(
         therapist.id,
@@ -265,7 +345,10 @@ async function getSlots({
         queryable
       );
 
-    for (const window of day.windows) {
+    for (
+      const window
+      of day.windows
+    ) {
       const windowStart =
         time.toMinutes(
           window.start_time
@@ -281,9 +364,11 @@ async function getSlots({
           Math.ceil(
             windowStart / step
           ) * step;
+
         start +
           service.duration_minutes <=
         windowEnd;
+
         start += step
       ) {
         if (start < from) {
@@ -305,14 +390,20 @@ async function getSlots({
           time.fromMinutes(start);
 
         if (!bySlot.has(key)) {
-          bySlot.set(key, {
-            start: key,
-            end: time.fromMinutes(
-              start +
-                service.duration_minutes
-            ),
-            therapistIds: [],
-          });
+          bySlot.set(
+            key,
+            {
+              start: key,
+
+              end:
+                time.fromMinutes(
+                  start +
+                    service.duration_minutes
+                ),
+
+              therapistIds: [],
+            }
+          );
         }
 
         bySlot
@@ -325,8 +416,11 @@ async function getSlots({
 
   const slots = [
     ...bySlot.values(),
-  ].sort((a, b) =>
-    a.start.localeCompare(b.start)
+  ].sort(
+    (a, b) =>
+      a.start.localeCompare(
+        b.start
+      )
   );
 
   return {
@@ -337,13 +431,22 @@ async function getSlots({
 }
 
 /**
- * Authoritative check used when actually saving a booking.
- * Picks a therapist when none is given.
- * Throws if the time cannot be booked.
+ * Authoritative check used
+ * when actually saving a booking.
  *
- * `preferTherapistIds` lets a reschedule try the current therapist first.
+ * Picks a therapist when none
+ * is given.
  *
- * `queryable` may be either the PostgreSQL pool or a transaction client.
+ * Throws if the time cannot
+ * be booked.
+ *
+ * preferTherapistIds lets a
+ * reschedule try the current
+ * therapist first.
+ *
+ * queryable may be either the
+ * PostgreSQL pool or a
+ * transaction client.
  */
 async function resolveBooking({
   serviceId,
@@ -364,10 +467,11 @@ async function resolveBooking({
     );
   }
 
-  const service = await getService(
-    serviceId,
-    queryable
-  );
+  const service =
+    await getService(
+      serviceId,
+      queryable
+    );
 
   if (!service) {
     throw notFound(
@@ -395,7 +499,10 @@ async function resolveBooking({
 
   if (
     startMinutes <
-    earliestStart(date, forStaff)
+    earliestStart(
+      date,
+      forStaff
+    )
   ) {
     throw conflict(
       forStaff
@@ -404,7 +511,10 @@ async function resolveBooking({
     );
   }
 
-  // A guest cannot be in two places at once.
+  /*
+   * A guest cannot be
+   * in two places at once.
+   */
   if (clientId) {
     const clashResult =
       await queryable.query(
@@ -460,7 +570,10 @@ async function resolveBooking({
 
   const free = [];
 
-  for (const therapist of candidates) {
+  for (
+    const therapist
+    of candidates
+  ) {
     const day =
       await loadTherapistDay(
         therapist.id,
@@ -489,7 +602,8 @@ async function resolveBooking({
 
   /*
    * Preferred therapists first,
-   * then whoever has the lightest day.
+   * then whoever has the
+   * lightest day.
    */
 
   const therapistIds =
@@ -530,51 +644,57 @@ async function resolveBooking({
       )
     );
 
-  free.sort((a, b) => {
-    const pa =
-      preferTherapistIds.includes(
-        a.id
-      )
-        ? 0
-        : 1;
+  free.sort(
+    (a, b) => {
+      const pa =
+        preferTherapistIds.includes(
+          a.id
+        )
+          ? 0
+          : 1;
 
-    const pb =
-      preferTherapistIds.includes(
-        b.id
-      )
-        ? 0
-        : 1;
+      const pb =
+        preferTherapistIds.includes(
+          b.id
+        )
+          ? 0
+          : 1;
 
-    if (pa !== pb) {
-      return pa - pb;
+      if (pa !== pb) {
+        return pa - pb;
+      }
+
+      const aLoad =
+        loadByTherapist.get(
+          a.id
+        ) ?? 0;
+
+      const bLoad =
+        loadByTherapist.get(
+          b.id
+        ) ?? 0;
+
+      const diff =
+        aLoad - bLoad;
+
+      return diff !== 0
+        ? diff
+        : a.id - b.id;
     }
-
-    const aLoad =
-      loadByTherapist.get(
-        a.id
-      ) ?? 0;
-
-    const bLoad =
-      loadByTherapist.get(
-        b.id
-      ) ?? 0;
-
-    const diff =
-      aLoad - bLoad;
-
-    return diff !== 0
-      ? diff
-      : a.id - b.id;
-  });
+  );
 
   return {
     service,
+
     therapistId:
       free[0].id,
+
     start,
-    end: time.fromMinutes(
-      endMinutes
-    ),
+
+    end:
+      time.fromMinutes(
+        endMinutes
+      ),
   };
 }
 
