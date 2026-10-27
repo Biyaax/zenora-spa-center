@@ -5,6 +5,7 @@ const cors = require("cors");
 
 const config = require("./config");
 const db = require("./database/postgres");
+
 const {
   HttpError,
 } = require("./lib/errors");
@@ -38,6 +39,11 @@ const receptionDashboardRoutes =
 const receptionBookingsRoutes =
   require(
     "./routes/receptionBookings"
+  );
+
+const receptionCheckInOutRoutes =
+  require(
+    "./routes/receptionCheckInOut"
   );
 
 const app = express();
@@ -220,10 +226,19 @@ app.use(
   receptionBookingsRoutes
 );
 
+app.use(
+  "/api/reception/check-in-out",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionCheckInOutRoutes
+);
+
 /*
   Existing Receptionist routes:
-  walk-ins, payments, client records,
-  check-in/out, etc.
+  walk-ins, payments,
+  client records, etc.
 */
 app.use(
   "/api/reception",
