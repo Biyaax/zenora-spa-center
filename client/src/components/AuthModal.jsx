@@ -1,37 +1,21 @@
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
-import {
-  useAuth,
-} from "../context/AuthContext";
-
-function AuthModal({
-  isOpen,
-  onClose,
-}) {
+function AuthModal({ isOpen, onClose }) {
   const {
     login,
     register,
     resendVerification,
   } = useAuth();
 
-  const [mode, setMode] =
-    useState("login");
+  const [mode, setMode] = useState("login");
 
-  const [
-    loginData,
-    setLoginData,
-  ] = useState({
+  const [loginData, setLoginData] = useState({
     email: "",
     password: "",
   });
 
-  const [
-    registerData,
-    setRegisterData,
-  ] = useState({
+  const [registerData, setRegisterData] = useState({
     firstName: "",
     lastName: "",
     email: "",
@@ -40,29 +24,28 @@ function AuthModal({
     confirmPassword: "",
   });
 
-  const [
-    verificationEmail,
-    setVerificationEmail,
-  ] = useState("");
+  const [verificationEmail, setVerificationEmail] =
+    useState("");
+
+  const [verificationNotice, setVerificationNotice] =
+    useState("");
+
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Password visibility
+  const [showLoginPassword, setShowLoginPassword] =
+    useState(false);
 
   const [
-    verificationNotice,
-    setVerificationNotice,
-  ] = useState("");
+    showRegisterPassword,
+    setShowRegisterPassword,
+  ] = useState(false);
 
   const [
-    message,
-    setMessage,
-  ] = useState("");
-
-  const [
-    error,
-    setError,
-  ] = useState("");
-
-  const [
-    busy,
-    setBusy,
+    showConfirmPassword,
+    setShowConfirmPassword,
   ] = useState(false);
 
   /* =======================================================
@@ -74,23 +57,16 @@ function AuthModal({
       return;
     }
 
-    const handleEscape =
-      (event) => {
-        if (
-          event.key ===
-            "Escape" &&
-          !busy
-        ) {
-          onClose();
-        }
-      };
+    const handleEscape = (event) => {
+      if (event.key === "Escape" && !busy) {
+        onClose();
+      }
+    };
 
     const previousOverflow =
-      document.body.style
-        .overflow;
+      document.body.style.overflow;
 
-    document.body.style
-      .overflow = "hidden";
+    document.body.style.overflow = "hidden";
 
     window.addEventListener(
       "keydown",
@@ -98,8 +74,7 @@ function AuthModal({
     );
 
     return () => {
-      document.body.style
-        .overflow =
+      document.body.style.overflow =
         previousOverflow;
 
       window.removeEventListener(
@@ -107,21 +82,14 @@ function AuthModal({
         handleEscape
       );
     };
-  }, [
-    isOpen,
-    onClose,
-    busy,
-  ]);
+  }, [isOpen, onClose, busy]);
 
   useEffect(() => {
     if (isOpen) {
       setMessage("");
       setError("");
     }
-  }, [
-    mode,
-    isOpen,
-  ]);
+  }, [mode, isOpen]);
 
   if (!isOpen) {
     return null;
@@ -131,291 +99,290 @@ function AuthModal({
      INPUT HANDLERS
   ======================================================= */
 
-  const handleLoginChange =
-    (event) => {
-      const {
-        name,
-        value,
-      } = event.target;
+  const handleLoginChange = (event) => {
+    const { name, value } = event.target;
 
-      setLoginData(
-        (current) => ({
-          ...current,
-          [name]: value,
-        })
-      );
+    setLoginData((current) => ({
+      ...current,
+      [name]: value,
+    }));
 
-      setMessage("");
-      setError("");
-    };
+    setMessage("");
+    setError("");
+  };
 
-  const handleRegisterChange =
-    (event) => {
-      const {
-        name,
-        value,
-      } = event.target;
+  const handleRegisterChange = (event) => {
+    const { name, value } = event.target;
 
-      setRegisterData(
-        (current) => ({
-          ...current,
-          [name]: value,
-        })
-      );
+    setRegisterData((current) => ({
+      ...current,
+      [name]: value,
+    }));
 
-      setMessage("");
-      setError("");
-    };
+    setMessage("");
+    setError("");
+  };
 
   /* =======================================================
      LOGIN
   ======================================================= */
 
-  const handleLoginSubmit =
-    async (event) => {
-      event.preventDefault();
+  const handleLoginSubmit = async (event) => {
+    event.preventDefault();
 
-      if (busy) {
-        return;
-      }
+    if (busy) {
+      return;
+    }
 
-      setMessage("");
+    setMessage("");
+    setError("");
+
+    const email = loginData.email.trim();
+    const password = loginData.password;
+
+    if (!email || !password) {
+      setError(
+        "Please enter your email and password."
+      );
+
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      await login(email, password);
+
+      setLoginData({
+        email: "",
+        password: "",
+      });
+
+      setShowLoginPassword(false);
+
       setError("");
+      setMessage("");
 
-      const email =
-        loginData.email.trim();
-
-      const password =
-        loginData.password;
-
-      if (
-        !email ||
-        !password
-      ) {
-        setError(
-          "Please enter your email and password."
-        );
-
-        return;
-      }
-
-      setBusy(true);
-
-      try {
-        await login(
-          email,
-          password
-        );
-
-        setLoginData({
-          email: "",
-          password: "",
-        });
-
-        setError("");
-        setMessage("");
-
-        onClose();
-      } catch (err) {
-        setError(
-          err?.message ||
+      onClose();
+    } catch (err) {
+      setError(
+        err?.message ||
           "Unable to log in. Please try again."
-        );
-      } finally {
-        setBusy(false);
-      }
-    };
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /* =======================================================
      REGISTER
   ======================================================= */
 
-  const handleRegisterSubmit =
-    async (event) => {
-      event.preventDefault();
+  const handleRegisterSubmit = async (event) => {
+    event.preventDefault();
 
-      if (busy) {
-        return;
-      }
+    if (busy) {
+      return;
+    }
 
-      setMessage("");
-      setError("");
+    setMessage("");
+    setError("");
 
-      const cleanedData = {
-        firstName:
-          registerData
-            .firstName
-            .trim(),
+    const cleanedData = {
+      firstName:
+        registerData.firstName.trim(),
 
-        lastName:
-          registerData
-            .lastName
-            .trim(),
+      lastName:
+        registerData.lastName.trim(),
 
-        email:
-          registerData
-            .email
-            .trim()
-            .toLowerCase(),
+      email:
+        registerData.email
+          .trim()
+          .toLowerCase(),
 
-        phone:
-          registerData
-            .phone
-            .trim(),
+      phone:
+        registerData.phone.trim(),
 
-        password:
-          registerData
-            .password,
+      password:
+        registerData.password,
 
-        confirmPassword:
-          registerData
-            .confirmPassword,
-      };
-
-      if (
-        !cleanedData.firstName ||
-        !cleanedData.lastName ||
-        !cleanedData.email ||
-        !cleanedData.phone ||
-        !cleanedData.password ||
-        !cleanedData
-          .confirmPassword
-      ) {
-        setError(
-          "Please complete all required fields."
-        );
-
-        return;
-      }
-
-      if (
-        cleanedData.password !==
-        cleanedData
-          .confirmPassword
-      ) {
-        setError(
-          "Passwords do not match."
-        );
-
-        return;
-      }
-
-      setBusy(true);
-
-      try {
-        const result =
-          await register(
-            cleanedData
-          );
-
-        setVerificationEmail(
-          result?.email ||
-          cleanedData.email
-        );
-
-        setVerificationNotice(
-          result?.message ||
-          "Your account was created. Please check your email and verify your account before signing in."
-        );
-
-        setRegisterData({
-          firstName: "",
-          lastName: "",
-          email: "",
-          phone: "",
-          password: "",
-          confirmPassword: "",
-        });
-
-        /*
-         * Do NOT close the modal.
-         * Show the verification screen.
-         */
-        setMode(
-          "verify"
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
-          "Unable to create your account. Please try again."
-        );
-      } finally {
-        setBusy(false);
-      }
+      confirmPassword:
+        registerData.confirmPassword,
     };
+
+    if (
+      !cleanedData.firstName ||
+      !cleanedData.lastName ||
+      !cleanedData.email ||
+      !cleanedData.phone ||
+      !cleanedData.password ||
+      !cleanedData.confirmPassword
+    ) {
+      setError(
+        "Please complete all required fields."
+      );
+
+      return;
+    }
+
+    if (
+      cleanedData.password !==
+      cleanedData.confirmPassword
+    ) {
+      setError("Passwords do not match.");
+
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const result = await register(
+        cleanedData
+      );
+
+      setVerificationEmail(
+        result?.email ||
+          cleanedData.email
+      );
+
+      setVerificationNotice(
+        result?.message ||
+          "Your account was created. Please check your email and verify your account before signing in."
+      );
+
+      setRegisterData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        password: "",
+        confirmPassword: "",
+      });
+
+      setShowRegisterPassword(false);
+      setShowConfirmPassword(false);
+
+      /*
+       * Do NOT close the modal.
+       * Show the verification screen.
+       */
+      setMode("verify");
+    } catch (err) {
+      setError(
+        err?.message ||
+          "Unable to create your account. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /* =======================================================
      RESEND VERIFICATION
   ======================================================= */
 
-  const handleResend =
-    async () => {
-      if (
-        busy ||
-        !verificationEmail
-      ) {
-        return;
-      }
+  const handleResend = async () => {
+    if (
+      busy ||
+      !verificationEmail
+    ) {
+      return;
+    }
 
-      setMessage("");
-      setError("");
-      setBusy(true);
+    setMessage("");
+    setError("");
+    setBusy(true);
 
-      try {
-        const result =
-          await resendVerification(
-            verificationEmail
-          );
+    try {
+      const result =
+        await resendVerification(
+          verificationEmail
+        );
 
-        setMessage(
-          result?.message ||
+      setMessage(
+        result?.message ||
           "A new verification email has been sent."
-        );
-      } catch (err) {
-        setError(
-          err?.message ||
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
           "Unable to resend the verification email."
-        );
-      } finally {
-        setBusy(false);
-      }
-    };
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /* =======================================================
      MODE HELPERS
   ======================================================= */
 
-  const showLogin =
-    () => {
-      if (busy) {
-        return;
-      }
+  const showLogin = () => {
+    if (busy) {
+      return;
+    }
 
-      setMode("login");
+    setMode("login");
+    setMessage("");
+    setError("");
+
+    setShowRegisterPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const showRegister = () => {
+    if (busy) {
+      return;
+    }
+
+    setMode("register");
+    setMessage("");
+    setError("");
+
+    setShowLoginPassword(false);
+  };
+
+  const closeModal = () => {
+    if (!busy) {
       setMessage("");
       setError("");
-    };
 
-  const showRegister =
-    () => {
-      if (busy) {
-        return;
-      }
+      setShowLoginPassword(false);
+      setShowRegisterPassword(false);
+      setShowConfirmPassword(false);
 
-      setMode("register");
-      setMessage("");
-      setError("");
-    };
+      onClose();
+    }
+  };
 
-  const closeModal =
-    () => {
-      if (!busy) {
-        setMessage("");
-        setError("");
+  /* =======================================================
+     PASSWORD FIELD STYLES
+  ======================================================= */
 
-        onClose();
-      }
-    };
+  const passwordWrapperStyle = {
+    position: "relative",
+  };
+
+  const passwordInputStyle = {
+    paddingRight: "55px",
+  };
+
+  const passwordButtonStyle = {
+    position: "absolute",
+    right: "16px",
+    top: "50%",
+    transform: "translateY(-50%)",
+    border: "none",
+    background: "transparent",
+    padding: "5px",
+    margin: 0,
+    color: "#777",
+    cursor: "pointer",
+    zIndex: 3,
+    fontSize: "18px",
+    lineHeight: 1,
+  };
 
   /* =======================================================
      UI
@@ -506,22 +473,68 @@ function AuthModal({
                   Password
                 </label>
 
-                <input
-                  id="modal-login-password"
-                  type="password"
-                  name="password"
-                  value={
-                    loginData.password
+                <div
+                  style={
+                    passwordWrapperStyle
                   }
-                  onChange={
-                    handleLoginChange
-                  }
-                  className="form-control p-4"
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  disabled={busy}
-                  required
-                />
+                >
+                  <input
+                    id="modal-login-password"
+                    type={
+                      showLoginPassword
+                        ? "text"
+                        : "password"
+                    }
+                    name="password"
+                    value={
+                      loginData.password
+                    }
+                    onChange={
+                      handleLoginChange
+                    }
+                    className="form-control p-4"
+                    style={
+                      passwordInputStyle
+                    }
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    disabled={busy}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    style={
+                      passwordButtonStyle
+                    }
+                    onClick={() =>
+                      setShowLoginPassword(
+                        (current) =>
+                          !current
+                      )
+                    }
+                    aria-label={
+                      showLoginPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    title={
+                      showLoginPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    disabled={busy}
+                  >
+                    <i
+                      className={
+                        showLoginPassword
+                          ? "fas fa-eye-slash"
+                          : "fas fa-eye"
+                      }
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="d-flex justify-content-between align-items-center mb-4">
@@ -596,8 +609,7 @@ function AuthModal({
             REGISTER
         ============================================= */}
 
-        {mode ===
-          "register" && (
+        {mode === "register" && (
           <>
             <div className="text-center mb-4">
               <h6 className="d-inline-block bg-light text-primary text-uppercase py-1 px-2">
@@ -730,23 +742,69 @@ function AuthModal({
                       Password
                     </label>
 
-                    <input
-                      id="modal-register-password"
-                      type="password"
-                      name="password"
-                      value={
-                        registerData
-                          .password
+                    <div
+                      style={
+                        passwordWrapperStyle
                       }
-                      onChange={
-                        handleRegisterChange
-                      }
-                      className="form-control p-4"
-                      placeholder="Password"
-                      autoComplete="new-password"
-                      disabled={busy}
-                      required
-                    />
+                    >
+                      <input
+                        id="modal-register-password"
+                        type={
+                          showRegisterPassword
+                            ? "text"
+                            : "password"
+                        }
+                        name="password"
+                        value={
+                          registerData
+                            .password
+                        }
+                        onChange={
+                          handleRegisterChange
+                        }
+                        className="form-control p-4"
+                        style={
+                          passwordInputStyle
+                        }
+                        placeholder="Password"
+                        autoComplete="new-password"
+                        disabled={busy}
+                        required
+                      />
+
+                      <button
+                        type="button"
+                        style={
+                          passwordButtonStyle
+                        }
+                        onClick={() =>
+                          setShowRegisterPassword(
+                            (current) =>
+                              !current
+                          )
+                        }
+                        aria-label={
+                          showRegisterPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        title={
+                          showRegisterPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        disabled={busy}
+                      >
+                        <i
+                          className={
+                            showRegisterPassword
+                              ? "fas fa-eye-slash"
+                              : "fas fa-eye"
+                          }
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -756,23 +814,69 @@ function AuthModal({
                       Confirm Password
                     </label>
 
-                    <input
-                      id="modal-confirm-password"
-                      type="password"
-                      name="confirmPassword"
-                      value={
-                        registerData
-                          .confirmPassword
+                    <div
+                      style={
+                        passwordWrapperStyle
                       }
-                      onChange={
-                        handleRegisterChange
-                      }
-                      className="form-control p-4"
-                      placeholder="Confirm password"
-                      autoComplete="new-password"
-                      disabled={busy}
-                      required
-                    />
+                    >
+                      <input
+                        id="modal-confirm-password"
+                        type={
+                          showConfirmPassword
+                            ? "text"
+                            : "password"
+                        }
+                        name="confirmPassword"
+                        value={
+                          registerData
+                            .confirmPassword
+                        }
+                        onChange={
+                          handleRegisterChange
+                        }
+                        className="form-control p-4"
+                        style={
+                          passwordInputStyle
+                        }
+                        placeholder="Confirm password"
+                        autoComplete="new-password"
+                        disabled={busy}
+                        required
+                      />
+
+                      <button
+                        type="button"
+                        style={
+                          passwordButtonStyle
+                        }
+                        onClick={() =>
+                          setShowConfirmPassword(
+                            (current) =>
+                              !current
+                          )
+                        }
+                        aria-label={
+                          showConfirmPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        title={
+                          showConfirmPassword
+                            ? "Hide password"
+                            : "Show password"
+                        }
+                        disabled={busy}
+                      >
+                        <i
+                          className={
+                            showConfirmPassword
+                              ? "fas fa-eye-slash"
+                              : "fas fa-eye"
+                          }
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
