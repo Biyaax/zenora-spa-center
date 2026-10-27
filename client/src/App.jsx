@@ -11,6 +11,7 @@ import Topbar from "./components/Topbar";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import BackToTop from "./components/BackToTop";
+import VerifyEmail from "./pages/VerifyEmail";
 
 // Public pages
 import About from "./pages/About";
@@ -79,6 +80,11 @@ function App() {
           {/* =========================
               Public Pages
           ========================= */}
+
+          <Route
+            path="/verify-email"
+            element={<VerifyEmail />}
+          />
 
           <Route
             path="/"
