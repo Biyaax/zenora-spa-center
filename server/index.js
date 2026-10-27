@@ -143,6 +143,14 @@ app.use(
    MANAGER
 ========================= */
 
+/* Manager Staff Account and Schedule Management */
+app.use(
+  "/api/manager",
+  requireAuth,
+  requireRole("Spa Manager"),
+  require("./routes/managerStaff")
+);
+
 app.use(
   "/api/manager",
   requireAuth,

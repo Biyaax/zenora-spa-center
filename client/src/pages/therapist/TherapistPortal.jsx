@@ -1,13 +1,16 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import {
+  currentStaff, therapistRequest, getScheduleWeek, getAppointment, updateAppointmentStatus,
+  saveServiceNotes, getAvailability, getTimeOff, submitTimeOffRequest, getStaffProfile,
+  normalizeAppointment, normalizeAvailability, normalizeTimeOff, serializeServiceNotes
+} from "./therapistApi";
 import TherapistSidebar from "../../components/TherapistSidebar";
 import {
   localDate, shiftDay, weekDays, weekdayForDate, dateFromLocal, dateTimeMs,
   formatDate, formatTime, formatDateTime, formatElapsed, formatCountdown,
-  STATUSES, WEEKDAYS, demoStaff, createAppointments, createAvailability,
-  createTimeOff, createNotifications, createHistory
+  STATUSES, WEEKDAYS
 } from "./therapistDemoData";
 
 const TITLES = {
@@ -77,7 +80,7 @@ function Actions({ appt, onDetails, onChange, onEdit }) {
   if (appt.status === "Checked In") items.push({label:"Start Session", icon:"fas fa-play", action:()=>onChange(appt,"Ongoing")});
   if (appt.status === "Ongoing") items.push({label:"End Session", icon:"fas fa-stop-circle", action:()=>onChange(appt,"Completed")});
   if (["Confirmed","Checked In"].includes(appt.status)) items.push({label:"Mark No-Show", icon:"far fa-calendar-times", action:()=>onChange(appt,"No-Show")});
-  if (appt.status === "Completed") items.push({label:"Edit service notes", icon:"far fa-edit", action:()=>onEdit(appt)});
+  if (appt.status === "Completed" && appt.notes) items.push({label:"Edit service notes", icon:"far fa-edit", action:()=>onEdit(appt)});
   const toggle = () => {
     if (open) return setOpen(false);
     const rect = buttonRef.current.getBoundingClientRect();
@@ -151,7 +154,7 @@ function ModalContent({modal, appointment, notes, setNotes, onConfirm, onClose})
     <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Cancel</Btn><Btn onClick={onConfirm}>Start Session</Btn></div>
   </Dialog>;
   if (modal.type === "cancelTimeOff") return <Dialog title="Cancel time-off request?" onClose={onClose} description={`Request for ${formatDate(modal.date)}`}>
-    <p className="therapist-dialog-text">Only Pending requests can be cancelled. This change is only stored in the frontend demo.</p>
+    <p className="therapist-dialog-text">Only Pending requests can be cancelled. Cancellation is not supported by the current backend.</p>
     <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Keep request</Btn><Btn variant="danger" onClick={onConfirm}>Cancel request</Btn></div>
   </Dialog>;
   if (modal.type === "requestConflict") return <Dialog title="Appointments already assigned" onClose={onClose} description={formatDate(modal.date)}>
@@ -205,9 +208,10 @@ function Calendar({days,appointments,availability,requests,onDetails}) {
     })}
   </div></div>;
 }
-function SchedulePage({appointments,availability,requests,onDetails}) {
+function SchedulePage({appointments,availability,requests,onDetails,onDateChange}) {
   const [date,setDate]=useState(localDate());
   const [mode,setMode]=useState("day");
+  useEffect(()=>{onDateChange(date);},[date,onDateChange]);
   const days=mode==="week"?weekDays(date):[date];
   const list=appointments.filter(a=>days.includes(a.date)).sort((a,b)=>dateTimeMs(a)-dateTimeMs(b));
   const changeDate = delta => setDate(d=>shiftDay(d,delta*(mode==="week"?7:1)));
@@ -219,19 +223,20 @@ function SchedulePage({appointments,availability,requests,onDetails}) {
       <label>Selected date<input type="date" value={date} onChange={e=>setDate(e.target.value||localDate())}/></label><span className="therapist-range-caption">{days.length===1?formatDate(days[0]):`${formatDate(days[0])} – ${formatDate(days[6])}`}</span></div>
     <div className="therapist-legend" aria-label="Calendar status colors">{["Confirmed","Checked In","Ongoing","Completed","No-Show"].map(s=><span key={s}><i className={`therapist-legend-dot event-${s.toLowerCase().replaceAll(" ","-")}`}/>{s}</span>)}<span><i className="therapist-legend-dot is-blocked"/>Blocked / time off</span></div>
     {mode==="list" ? <AppointmentsTable rows={list} onDetails={onDetails} actions={false}/> : <Calendar days={days} appointments={appointments} availability={availability} requests={requests} onDetails={onDetails}/>}
-    <p className="therapist-help">Approved time off and non-working hours appear as blocked. Pending requests are shown as tentative. This is a sample-data calendar.</p>
+    <p className="therapist-help">Appointments and availability are loaded from Zenora. A therapist can only start an appointment after Receptionist check-in is confirmed by the server.</p>
   </div>;
 }
 function HistoryTimeline({items}) {
   if (!items.length) return <div className="therapist-empty"><h4>No status changes yet</h4><p>Session updates will appear here after an action is confirmed.</p></div>;
   return <ol className="therapist-history-timeline">{[...items].sort((a,b)=>new Date(b.at)-new Date(a.at)).map(entry=><li key={entry.id}><div className="therapist-timeline-dot"><Icon name="fas fa-history"/></div><div className="therapist-timeline-card"><div className="therapist-timeline-top"><strong>{entry.booking} · {entry.client}</strong><time dateTime={entry.at}>{formatDateTime(entry.at)}</time></div><p>{entry.from} <Icon name="fas fa-long-arrow-alt-right"/> <strong>{entry.to}</strong></p><small>Changed by <strong>{entry.actor}</strong></small></div></li>)}</ol>;
 }
-function AppointmentsPage({appointments,history,onDetails,onChange,onEdit}) {
+function AppointmentsPage({appointments,history,onDetails,onChange,onEdit,onDateChange}) {
   const [date,setDate]=useState(localDate());
   const [range,setRange]=useState("day");
   const [search,setSearch]=useState("");
   const [status,setStatus]=useState("All");
   const [tab,setTab]=useState("appointments");
+  useEffect(()=>{onDateChange(date);},[date,onDateChange]);
   const days=weekDays(date);
   const inRange=a=>range==="all" || (range==="day"?a.date===date:a.date>=days[0]&&a.date<=days[6]);
   const relevant=appointments.filter(a=>inRange(a) && `${a.id} ${a.client} ${a.service}`.toLowerCase().includes(search.toLowerCase().trim()));
@@ -240,12 +245,12 @@ function AppointmentsPage({appointments,history,onDetails,onChange,onEdit}) {
   return <div className="therapist-panel"><div className="therapist-panel-title"><div><h2>Appointment Management</h2><p>Check-In is performed by Receptionist; therapists manage sessions only.</p></div></div>
     <div className="therapist-tabs" role="group" aria-label="Appointment sections"><button type="button" className={tab==="appointments"?"active":""} aria-pressed={tab==="appointments"} onClick={()=>setTab("appointments")}>Appointment List</button><button type="button" className={tab==="history"?"active":""} aria-pressed={tab==="history"} onClick={()=>setTab("history")}>My Status History</button></div>
     {tab==="history" ? <HistoryTimeline items={history}/> : <>
-      <div className="therapist-filter-bar"><div className="therapist-segmented" role="group" aria-label="Date range">{[["day","Daily"],["week","Weekly"],["all","All Dates"]].map(([value,label])=><button key={value} type="button" className={range===value?"active":""} aria-pressed={range===value} onClick={()=>setRange(value)}>{label}</button>)}</div>
+      <div className="therapist-filter-bar"><div className="therapist-segmented" role="group" aria-label="Date range">{[["day","Daily"],["week","Weekly"],["all","Loaded Dates"]].map(([value,label])=><button key={value} type="button" className={range===value?"active":""} aria-pressed={range===value} onClick={()=>setRange(value)}>{label}</button>)}</div>
         {range!=="all"&&<label>Date<input type="date" value={date} onChange={e=>setDate(e.target.value||localDate())}/></label>}
         <label className="therapist-search-label">Search appointments<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Booking ID, client, service..."/></label>
       </div>
       <div className="therapist-chips" role="group" aria-label="Filter by appointment status">{STATUSES.map(s=><button type="button" key={s} className={status===s?"active":""} aria-pressed={status===s} onClick={()=>setStatus(s)}>{s}<span>{counts[s]}</span></button>)}</div>
-      <div className="therapist-results-row"><p>{shown.length} appointment{shown.length!==1?"s":""} found {range==="day"?`on ${formatDate(date)}`:range==="week"?"in selected week":"across all dates"}</p><button type="button" className="therapist-text-button" onClick={()=>{setRange("day");setDate(localDate());setStatus("All");setSearch("");}}>Reset filters</button></div>
+      <div className="therapist-results-row"><p>{shown.length} appointment{shown.length!==1?"s":""} found {range==="day"?`on ${formatDate(date)}`:range==="week"?"in selected week":"in the loaded date ranges"}</p><button type="button" className="therapist-text-button" onClick={()=>{setRange("day");setDate(localDate());setStatus("All");setSearch("");}}>Reset filters</button></div>
       <AppointmentsTable rows={shown} onDetails={onDetails} onChange={onChange} onEdit={onEdit}/>
     </>}
   </div>;
@@ -272,31 +277,28 @@ function DashboardPage({appointments,notifications,onDetails,onChange,now}) {
     <div className="therapist-panel"><div className="therapist-panel-title"><div><h2>Today's Appointments</h2><p>Sessions assigned to you for {formatDate(today)}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View all appointments</Link></div><AppointmentsTable rows={rows} onDetails={onDetails} actions={false}/></div>
   </>;
 }
-function AvailabilityPage({availability,setAvailability,requests,appointments,onSubmitRequest,onCancelRequest,toast}) {
+function AvailabilityPage({availability,requests,appointments,onSubmitRequest}) {
   const [offDate,setOffDate]=useState("");
   const [reason,setReason]=useState("");
   const [error,setError]=useState("");
   const assigned=appointments.filter(a=>a.date===offDate && !["No-Show"].includes(a.status));
-  const validHours=Object.values(availability).every(v=>!v.enabled||toMinutes(v.start)<toMinutes(v.end));
-  const update=(day,key,value)=>setAvailability(prev=>({...prev,[day]:{...prev[day],[key]:value}}));
   const submit=e=>{
     e.preventDefault();setError("");
     if (!offDate || offDate<localDate()) return setError("Choose today or a future date.");
     if (!reason.trim()) return setError("Please enter a reason for your request.");
-    if (requests.some(r=>r.date===offDate&&r.status!=="Rejected")) return setError("You already have a Pending or Approved request for that date.");
+    if (requests.some(r=>r.date<=offDate&&(r.endDate||r.date)>=offDate&&r.status!=="Rejected")) return setError("You already have a Pending or Approved request for that date.");
     onSubmitRequest({date:offDate,reason:reason.trim(),conflicts:assigned.length},()=>{setOffDate("");setReason("");});
   };
   return <div className="therapist-availability-layout">
-    <section className="therapist-panel"><h2>Regular Availability</h2><p className="therapist-muted">Choose working days and set the start and end time for each day.</p>
+    <section className="therapist-panel"><h2>Regular Availability</h2><p className="therapist-muted">Read-only working hours assigned to you by the Spa Manager.</p>
       <div className="therapist-hours-table"><div className="therapist-hours-header"><span>Day</span><span>Available</span><span>Start</span><span>End</span></div>
         {WEEKDAYS.map(day=><div className={`therapist-hours-row ${!availability[day].enabled?"inactive":""}`} key={day}>
-          <strong>{day}</strong><label className="therapist-check"><input type="checkbox" checked={availability[day].enabled} onChange={e=>update(day,"enabled",e.target.checked)}/><span className="sr-only">Available on {day}</span></label>
-          <label className="therapist-field-silent"><span className="sr-only">{day} start time</span><input type="time" value={availability[day].start} disabled={!availability[day].enabled} onChange={e=>update(day,"start",e.target.value)}/></label>
-          <label className="therapist-field-silent"><span className="sr-only">{day} end time</span><input type="time" value={availability[day].end} disabled={!availability[day].enabled} onChange={e=>update(day,"end",e.target.value)}/></label>
+          <strong>{day}</strong><label className="therapist-check"><input type="checkbox" checked={availability[day].enabled} disabled title="Working hours are managed by the Spa Manager"/><span className="sr-only">Available on {day}</span></label>
+          <label className="therapist-field-silent"><span className="sr-only">{day} start time</span><input type="time" value={availability[day].start} disabled={!availability[day].enabled} readOnly/></label>
+          <label className="therapist-field-silent"><span className="sr-only">{day} end time</span><input type="time" value={availability[day].end} disabled={!availability[day].enabled} readOnly/></label>
         </div>)}
       </div>
-      {!validHours && <p role="alert" className="therapist-field-error">End time must be later than start time for each selected day.</p>}
-      <Btn disabled={!validHours} onClick={()=>toast("Availability saved for this frontend demo.")}>Save Availability</Btn>
+      <p className="therapist-help">These are your saved working hours. Updates require the manager's schedule-assignment endpoint, which is not available yet; no changes are made here.</p>
     </section>
     <div><section className="therapist-panel"><h2>Request Time Off</h2><form className="therapist-form" onSubmit={submit}>
       <label htmlFor="therapist-off-date">Requested date <span>*</span><input id="therapist-off-date" type="date" required min={localDate()} value={offDate} onChange={e=>{setOffDate(e.target.value);setError("");}}/></label>
@@ -306,7 +308,7 @@ function AvailabilityPage({availability,setAvailability,requests,appointments,on
       <button className="therapist-btn primary" type="submit">Submit Request</button>
     </form></section>
     <section className="therapist-panel"><h2>My Time-Off Requests</h2>{!requests.length?<div className="therapist-empty"><p>No time-off requests recorded.</p></div>:
-      <div className="therapist-request-list">{[...requests].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div className="therapist-request" key={r.id}><div><strong>{formatDate(r.date)}</strong><p>{r.reason}</p></div><div className="therapist-request-actions"><Status value={r.status}/>{r.status==="Pending"&&<Btn variant="outline" onClick={()=>onCancelRequest(r)}>Cancel</Btn>}</div></div>)}</div>}
+      <div className="therapist-request-list">{[...requests].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div className="therapist-request" key={r.id}><div><strong>{formatDate(r.date)}{r.endDate&&r.endDate!==r.date?` – ${formatDate(r.endDate)}`:''}</strong><p>{r.reason}</p></div><div className="therapist-request-actions"><Status value={r.status}/>{r.status==="Pending"&&<small>Manager review pending</small>}</div></div>)}</div>}
     </section></div>
   </div>;
 }
@@ -334,31 +336,85 @@ function ProfilePage({name,role,staff,onLogout,toast}) {
       <label htmlFor="therapist-new-password">New password<input id="therapist-new-password" type="password" minLength={8} required autoComplete="new-password" value={newPw} onChange={e=>setNewPw(e.target.value)}/></label>
       <label htmlFor="therapist-confirm-password">Confirm new password<input id="therapist-confirm-password" type="password" minLength={8} required autoComplete="new-password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)}/></label>
       {error&&<p className="therapist-field-error" role="alert">{error}</p>}
-      <button className="therapist-btn primary" type="submit">Change Password</button>
+      <button className="therapist-btn primary" type="submit" disabled title="Requires a protected staff-password endpoint">Change Password (Unavailable)</button>
     </form></section></div>;
 }
 export default function TherapistPortal() {
   const location=useLocation(), navigate=useNavigate();
-  const {user,logout}=useAuth();
-  const role=String(user?.role||"").toLowerCase().replace(/[_-]/g," ").trim();
-  const authenticatedTherapist=["therapist","massage therapist"].includes(role);
-  const staffName=authenticatedTherapist ? String(user?.fullName||user?.name||[user?.firstName,user?.lastName].filter(Boolean).join(" ")).trim()||demoStaff.name : demoStaff.name;
-  const [appointments,setAppointments]=useState(createAppointments);
-  const [availability,setAvailability]=useState(createAvailability);
-  const [timeOff,setTimeOff]=useState(createTimeOff);
-  const [notifications]=useState(createNotifications);
-  const [history,setHistory]=useState(()=>createHistory(staffName));
+  const [staff,setStaff]=useState(()=>currentStaff());
+  const staffName=[staff?.first_name||staff?.firstName,staff?.last_name||staff?.lastName].filter(Boolean).join(" ") || staff?.name || 'Massage Therapist';
+  const [appointments,setAppointments]=useState([]);
+  const [availability,setAvailability]=useState(()=>normalizeAvailability([]));
+  const [timeOff,setTimeOff]=useState([]);
+  const [notifications]=useState([]); // Backend does not expose a Therapist notification feed yet.
+  const [history,setHistory]=useState([]); // Only status updates confirmed during this session.
   const [modal,setModal]=useState(null);
   const [notes,setNotes]=useState(newNotes);
   const [onRequestComplete,setOnRequestComplete]=useState(null);
   const [toastMessage,setToastMessage]=useState(null);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [profileOpen,setProfileOpen]=useState(false);
+  const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState('');
+  const [busy,setBusy]=useState(false);
+  const requestedWeeks=useRef(new Set());
   const menuRef=useRef(null);
   const [now,setNow]=useState(Date.now());
   const section=location.pathname.split("/")[2]||"dashboard";
   const page=TITLES[section]?section:"dashboard";
 
+  const showToast=(message,type="success")=>setToastMessage({message,type});
+  const loadWeek=async(date,{force=false}={})=>{
+    const key=weekDays(date)[0];
+    if(!force&&requestedWeeks.current.has(key))return;
+    requestedWeeks.current.add(key);
+    try{
+      const result=await getScheduleWeek(date);
+      const rows=(result.appointments||[]).map(normalizeAppointment);
+      setLoadError('');
+      setAppointments(prev=>{
+        const rowsById=new Map(prev.map(a=>[String(a.id),a]));
+        for(const row of rows) rowsById.set(String(row.id), {...row,notes:rowsById.get(String(row.id))?.notes||null});
+        // Replace all appointments for this fetched week; account for cancellations.
+        const present=new Set(rows.map(a=>String(a.id)));
+        for(const [id,a] of rowsById)if(weekDays(date).includes(a.date)&&!present.has(id))rowsById.delete(id);
+        return [...rowsById.values()];
+      });
+    }catch(err){requestedWeeks.current.delete(key);setLoadError(err.message);throw err;}
+  };
+  // A stable callback prevents child calendar date controls from continuously refetching.
+  const onDateChangeRef=useRef(null);
+  onDateChangeRef.current=(date)=>{loadWeek(date).catch(()=>{});};
+  const onDateChange=useRef((date)=>onDateChangeRef.current?.(date)).current;
+  const refreshTimeOff=async()=>{
+    const data=await getTimeOff();
+    setTimeOff((data.requests||[]).map(normalizeTimeOff));
+  };
+  const refreshAvailability=async()=>{
+    const data=await getAvailability();
+    setAvailability(normalizeAvailability(data.availability||[]));
+  };
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      setLoading(true);setLoadError('');
+      const initial=[getScheduleWeek(localDate()),getAvailability(),getTimeOff(),getStaffProfile()];
+      const results=await Promise.allSettled(initial);
+      if(!alive)return;
+      const [sched,avail,off,profile]=results;
+      if(sched.status==='fulfilled'){
+        setAppointments((sched.value.appointments||[]).map(normalizeAppointment));
+        requestedWeeks.current.add(weekDays(localDate())[0]);
+      }
+      if(avail.status==='fulfilled')setAvailability(normalizeAvailability(avail.value.availability||[]));
+      if(off.status==='fulfilled')setTimeOff((off.value.requests||[]).map(normalizeTimeOff));
+      if(profile.status==='fulfilled'&&profile.value.user)setStaff(profile.value.user);
+      const failure=results.find(r=>r.status==='rejected');
+      if(failure)setLoadError(failure.reason?.message||'Unable to load some Therapist data.');
+      setLoading(false);
+    })();
+    return()=>{alive=false;};
+  },[]);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{setMobileOpen(false);setProfileOpen(false);},[location.pathname]);
   useEffect(()=>{if(!toastMessage)return;const timer=setTimeout(()=>setToastMessage(null),5000);return()=>clearTimeout(timer);},[toastMessage]);
@@ -368,65 +424,113 @@ export default function TherapistPortal() {
     document.addEventListener("pointerdown",onPointer);document.addEventListener("keydown",onKey);
     return()=>{document.removeEventListener("pointerdown",onPointer);document.removeEventListener("keydown",onKey);};
   },[]);
-  const showToast=(message,type="success")=>setToastMessage({message,type});
+  useEffect(()=>{
+    if(page!=='availability')return;
+    refreshTimeOff().catch(e=>setLoadError(e.message));
+    const refresh=()=>{if(document.visibilityState==='visible')refreshTimeOff().catch(e=>setLoadError(e.message));};
+    document.addEventListener('visibilitychange',refresh);
+    return()=>document.removeEventListener('visibilitychange',refresh);
+  },[page]);
   const closeModal=()=>{setModal(null);setOnRequestComplete(null);};
   const currentAppointment=modal?.appointmentId?appointments.find(a=>a.id===modal.appointmentId):null;
-  const handleLogout=()=>{logout();navigate("/",{replace:true});};
-  const staffDetails = authenticatedTherapist ? { ...demoStaff, email:user?.email||demoStaff.email, phone:user?.phone||demoStaff.phone, specialties:Array.isArray(user?.specialties)?user.specialties:demoStaff.specialties } : demoStaff;
-  const addHistory=(a,from,to)=>setHistory(prev=>[{id:`H-${Date.now()}-${prev.length}`,booking:a.id,client:a.client,from,to,actor:`Me (${staffName})`,at:new Date().toISOString()},...prev]);
-  const onDetails=a=>setModal({type:"details",appointmentId:a.id});
+  const handleLogout=()=>{
+    sessionStorage.removeItem("zenoraStaffToken");
+    sessionStorage.removeItem("zenoraStaffUser");
+    navigate("/", { replace: true });
+  };
+  const staffDetails={
+    email:staff?.email||'Not provided', phone:staff?.phone||'Not provided',
+    specialties:Array.isArray(staff?.specialties)?staff.specialties:[]
+  };
+  const addHistory=(a,from,to)=>setHistory(prev=>[{
+    id:`H-${Date.now()}-${prev.length}`,booking:a.id,client:a.client,
+    from,to,actor:`Me (${staffName})`,at:new Date().toISOString()
+  },...prev]);
+  const onDetails=async(a)=>{
+    try{
+      const result=await getAppointment(a.id);
+      const detail=normalizeAppointment(result.appointment);
+      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,...detail,notes:p.notes}:p));
+    }catch(e){showToast(e.message,'error');return;}
+    setModal({type:"details",appointmentId:a.id});
+  };
   const onChange=(a,next)=>{
-    // A receptionist, not this portal, performs Check-In.
     if(next==="Ongoing"&&a.status==="Checked In")setModal({type:"start",appointmentId:a.id});
     else if(next==="Completed"&&a.status==="Ongoing"){setNotes(a.notes||newNotes());setModal({type:"end",appointmentId:a.id});}
     else if(next==="No-Show"&&["Confirmed","Checked In"].includes(a.status))setModal({type:"noShow",appointmentId:a.id});
-    else showToast("That status transition is not permitted for Massage Therapists.","error");
+    else showToast('The status change is not allowed, or the receptionist check-in has not been confirmed.','error');
   };
-  const onEdit=a=>{if(a.status!=="Completed")return;setNotes(a.notes||newNotes());setModal({type:"editNotes",appointmentId:a.id});};
-  const onConfirm=()=>{
-    if(!modal)return;
+  const onEdit=a=>{
+    if(a.status!=="Completed")return;
+    setNotes(a.notes||newNotes());
+    setModal({type:"editNotes",appointmentId:a.id});
+  };
+  const doSubmitTimeOff=async(request, onSuccess)=>{
+    setBusy(true);
+    try{
+      await submitTimeOffRequest(request);
+      onSuccess?.();
+      showToast('Time-off request submitted for Manager review.');
+      try { await refreshTimeOff(); }
+      catch (e) { setLoadError(`Request saved, but unable to refresh the list: ${e.message}`); }
+      closeModal();
+    }catch(e){showToast(e.message,'error');}
+    finally{setBusy(false);}
+  };
+  const onConfirm=async()=>{
+    if(!modal||busy)return;
     const a=currentAppointment;
     if(["start","end","noShow","editNotes"].includes(modal.type)&&!a){closeModal();return;}
-    if(modal.type==="start"){
-      if(a.status!=="Checked In")return closeModal();
-      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Ongoing",startedAt:new Date().toISOString()}:p));
-      addHistory(a,"Checked In","Ongoing");showToast("Session started. Elapsed timer is running in this demo.");
-    }
-    if(modal.type==="end"){
-      if(a.status!=="Ongoing"||![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
-      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Completed",notes:{...notes}}:p));
-      addHistory(a,"Ongoing","Completed");showToast("Session completed with required service notes (demo data).");
-    }
-    if(modal.type==="noShow"){
-      if(!["Confirmed","Checked In"].includes(a.status))return closeModal();
-      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"No-Show"}:p));
-      addHistory(a,a.status,"No-Show");showToast("No-Show recorded in the frontend demo.");
-    }
-    if(modal.type==="editNotes"){
-      if(a.status!=="Completed"||![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
-      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,notes:{...notes}}:p));
-      addHistory(a,"Service notes","Notes updated");showToast("Service notes updated in the frontend demo.");
-    }
-    if(modal.type==="cancelTimeOff"){
-      setTimeOff(prev=>prev.filter(r=>r.id!==modal.id||r.status!=="Pending"));showToast("Pending request cancelled in the frontend demo.");
-    }
     if(modal.type==="requestConflict"){
-      setTimeOff(prev=>[{id:`TO-${Date.now()}`,date:modal.date,reason:modal.reason,status:"Pending"},...prev]);
-      onRequestComplete?.();showToast("Time-off request submitted in this frontend demo; manager review is required.");
+      await doSubmitTimeOff({date:modal.date,reason:modal.reason},onRequestComplete);
+      return;
     }
-    closeModal();
+    if(!['start','end','noShow','editNotes'].includes(modal.type))return;
+    setBusy(true);
+    try{
+      if(modal.type==="start"){
+        if(a.status!=="Checked In")throw new Error('Check-in must be confirmed by the Receptionist first.');
+        await updateAppointmentStatus(a.id,'ongoing');
+        setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Ongoing",startedAt:new Date().toISOString()}:p));
+        addHistory(a,a.status,'Ongoing');showToast('Session started.');
+      }
+      if(modal.type==="noShow"){
+        await updateAppointmentStatus(a.id,'no-show');
+        setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"No-Show"}:p));
+        addHistory(a,a.status,'No-Show');showToast('No-show saved to Zenora.');
+      }
+      if(modal.type==="end"){
+        if(![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
+        // Separate existing API calls: status can succeed while notes save fails.
+        await updateAppointmentStatus(a.id,'completed');
+        setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Completed"}:p));
+        addHistory(a,a.status,'Completed');
+        try { await saveServiceNotes(a.id,serializeServiceNotes(notes)); }
+        catch(e){ setModal({type:'editNotes',appointmentId:a.id}); throw new Error(`Session completed but notes were not saved: ${e.message}. Please retry Save Notes.`); }
+        setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,notes:{...notes}}:p));
+        showToast('Session completed and notes saved.');
+      }
+      if(modal.type==="editNotes"){
+        if(![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
+        await saveServiceNotes(a.id,serializeServiceNotes(notes));
+        setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,notes:{...notes}}:p));
+        showToast('Service notes saved to Zenora.');
+      }
+      closeModal();
+    }catch(e){showToast(e.message,'error');}
+    finally{setBusy(false);}
   };
   const submitTimeOff=(request,onSuccess)=>{
     if(request.conflicts){setOnRequestComplete(()=>onSuccess);setModal({type:"requestConflict",...request});return;}
-    setTimeOff(prev=>[{id:`TO-${Date.now()}`,date:request.date,reason:request.reason,status:"Pending"},...prev]);
-    onSuccess();showToast("Time-off request submitted in this frontend demo; manager review is required.");
+    doSubmitTimeOff(request,onSuccess);
   };
   // Preserve old /therapist/notes bookmarks. Notes are edited via appointment actions only.
   if(section==="notes")return <Navigate to="/therapist/appointments" replace/>;
   return <div className="therapist-layout">
     <TherapistSidebar mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)}/>
     <main className="therapist-main"><header className="therapist-topbar">
-      <button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Icon name="fas fa-bars"/></button>
+      <button type="button" className="therapist-menu-btn" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Icon name="fas fa-bars"/></button>
+      <span className="therapist-workspace-label">Therapist Workspace</span>
       <div className="therapist-user-menu-wrap" ref={menuRef}>
         <button className="therapist-account-trigger" type="button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={()=>setProfileOpen(v=>!v)}>
           <span className="therapist-avatar" aria-hidden="true">{staffName.charAt(0).toUpperCase()}</span><span className="therapist-user-text"><strong>{staffName}</strong><small>Massage Therapist</small></span><Icon name={profileOpen?"fas fa-chevron-up":"fas fa-chevron-down"}/>
@@ -434,10 +538,12 @@ export default function TherapistPortal() {
       </div>
     </header>
     <div className="therapist-content"><div className="therapist-intro"><h1>{TITLES[page][0]}</h1><p>{TITLES[page][1]}</p></div>
+      {loading&&<div className="therapist-panel" role="status">Loading your Zenora staff records…</div>}
+      {loadError&&<div className="therapist-panel" role="alert"><p>{loadError}</p><Btn variant="outline" onClick={()=>{setLoadError('');requestedWeeks.current.clear();loadWeek(localDate(),{force:true}).catch(e=>showToast(e.message,'error'));refreshAvailability().catch(()=>{});refreshTimeOff().catch(()=>{});}}>Retry loading</Btn></div>}
       {page==="dashboard"&&<DashboardPage appointments={appointments} notifications={notifications} onDetails={onDetails} onChange={onChange} now={now}/>}
-      {page==="schedule"&&<SchedulePage appointments={appointments} availability={availability} requests={timeOff} onDetails={onDetails}/>}
-      {page==="appointments"&&<AppointmentsPage appointments={appointments} history={history} onDetails={onDetails} onChange={onChange} onEdit={onEdit}/>}
-      {page==="availability"&&<AvailabilityPage availability={availability} setAvailability={setAvailability} requests={timeOff} appointments={appointments} onSubmitRequest={submitTimeOff} onCancelRequest={r=>setModal({type:"cancelTimeOff",id:r.id,date:r.date})} toast={showToast}/>}
+      {page==="schedule"&&<SchedulePage appointments={appointments} availability={availability} requests={timeOff} onDetails={onDetails} onDateChange={onDateChange}/>}
+      {page==="appointments"&&<AppointmentsPage appointments={appointments} history={history} onDetails={onDetails} onChange={onChange} onEdit={onEdit} onDateChange={onDateChange}/>}
+      {page==="availability"&&<AvailabilityPage availability={availability} requests={timeOff} appointments={appointments} onSubmitRequest={submitTimeOff}/>}
       {page==="profile"&&<ProfilePage name={staffName} role="Massage Therapist" staff={staffDetails} onLogout={handleLogout} toast={showToast}/>}
     </div></main>
     {toastMessage&&<div className={`therapist-toast ${toastMessage.type}`} role="status"><Icon name={toastMessage.type==="error"?"fas fa-exclamation-triangle":"fas fa-check-circle"}/><span>{toastMessage.message}</span><button type="button" aria-label="Dismiss message" onClick={()=>setToastMessage(null)}>×</button></div>}

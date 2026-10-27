@@ -3,6 +3,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { staffLogin } from "../api/staffAuth";
 
+const STAFF_ROUTES = {
+  "Spa Manager": "/manager/dashboard",
+  "Massage Therapist": "/therapist/dashboard",
+  "Receptionist": "/receptionist/dashboard",
+};
+
 function StaffLogin() {
   const navigate = useNavigate();
 
@@ -19,12 +25,20 @@ function StaffLogin() {
     try {
       const data = await staffLogin(email, password);
 
-      if (
-        !["Spa Manager", "Massage Therapist"].includes(
-          data.user.role
-        )
-      ) {
+      const role = data.user?.role;
+      const destination = Object.prototype.hasOwnProperty.call(
+        STAFF_ROUTES,
+        role
+      )
+        ? STAFF_ROUTES[role]
+        : null;
+
+      if (!destination) {
         throw new Error("This staff role is not supported yet.");
+      }
+
+      if (!data.token) {
+        throw new Error("Login failed: authentication token missing.");
       }
 
       sessionStorage.setItem("zenoraStaffToken", data.token);
@@ -33,11 +47,7 @@ function StaffLogin() {
         JSON.stringify(data.user)
       );
 
-      if (data.user.role === "Spa Manager") {
-        navigate("/manager/dashboard", { replace: true });
-      } else {
-        navigate("/therapist/dashboard", { replace: true });
-      }
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || "Unable to log in.");
     } finally {
@@ -48,9 +58,12 @@ function StaffLogin() {
   return (
     <div className="container py-5" style={{ maxWidth: 520 }}>
       <div className="bg-light p-4 rounded">
-        <h2 className="text-center mb-3">Zenora Staff Login</h2>
+        <h2 className="text-center mb-3">
+          Zenora Staff Login
+        </h2>
+
         <p className="text-center">
-          Spa Manager and Massage Therapist
+          Spa Manager, Receptionist, and Massage Therapist
         </p>
 
         <form onSubmit={handleLogin}>

@@ -47,6 +47,7 @@ import ManagerTherapists from "./pages/manager/ManagerTherapists";
 import ManagerTimeOff from "./pages/manager/ManagerTimeOff";
 import ManagerPaymentReports from "./pages/manager/ManagerPaymentReports";
 import ManagerActivityLogs from "./pages/manager/ManagerActivityLogs";
+import AppShell from "./components/manager/AppShell";
 
 // Massage Therapist portal
 import TherapistPortal from "./pages/therapist/TherapistPortal";
@@ -194,14 +195,14 @@ function App() {
           {/* =========================
               Spa Manager Pages
           ========================= */}
+            <Route
+              element={
+                <StaffProtectedRoute allowedRole="Spa Manager">
+                  <AppShell />
+                </StaffProtectedRoute>
+              }
+            >
 
-          <Route
-            element={
-              <StaffProtectedRoute allowedRole="Spa Manager">
-                <Outlet />
-              </StaffProtectedRoute>
-            }
-          >
             <Route
               path="/manager/dashboard"
               element={<ManagerDashboard />}
