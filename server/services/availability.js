@@ -1,91 +1,162 @@
-const db = require("../database/db");
-const config = require("../config");
-const time = require("../lib/time");
-const { badRequest, notFound, conflict } = require("../lib/errors");
 
-const getService = db.prepare(
-  "SELECT * FROM services WHERE id = ? AND is_active = 1"
-);
 
-function eligibleTherapists(serviceId, therapistId = null) {
+async function eligibleTherapists(
+  serviceId,
+  therapistId = null,
+  queryable = db
+) {
   const params = [serviceId];
+
   let extra = "";
 
   if (therapistId) {
-    extra = "AND tp.user_id = ?";
     params.push(therapistId);
+    extra = `AND tp.user_id = $${params.length}`;
   }
 
-  return db
-    .prepare(
-      `SELECT u.id, u.first_name, u.last_name
-       FROM therapist_profiles tp
-       JOIN users u ON u.id = tp.user_id
-       JOIN therapist_services ts ON ts.therapist_id = tp.user_id
-       WHERE ts.service_id = ?
-         AND tp.is_available = 1
-         AND u.is_active = 1
-         ${extra}
-       ORDER BY u.first_name, u.last_name`
-    )
-    .all(...params);
+  const result = await queryable.query(
+    `
+    SELECT
+      u.id,
+      u.first_name,
+      u.last_name
+    FROM therapist_profiles tp
+    JOIN users u
+      ON u.id = tp.user_id
+    JOIN therapist_services ts
+      ON ts.therapist_id = tp.user_id
+    WHERE ts.service_id = $1
+      AND tp.is_available = 1
+      AND u.is_active = 1
+      ${extra}
+    ORDER BY
+      u.first_name,
+      u.last_name
+    `,
+    params
+  );
+
+  return result.rows;
 }
 
 /** Everything that decides whether a therapist is free on a date. */
-function loadTherapistDay(therapistId, date, excludeAppointmentId) {
-  const windows = db
-    .prepare(
-      `SELECT start_time, end_time
-       FROM therapist_availability
-       WHERE therapist_id = ? AND day_of_week = ? AND is_available = 1
-       ORDER BY start_time`
-    )
-    .all(therapistId, time.dayOfWeek(date));
+async function loadTherapistDay(
+  therapistId,
+  date,
+  excludeAppointmentId,
+  queryable = db
+) {
+  const windowsResult =
+    await queryable.query(
+      `
+      SELECT
+        start_time,
+        end_time
+      FROM therapist_availability
+      WHERE therapist_id = $1
+        AND day_of_week = $2
+        AND is_available = 1
+      ORDER BY start_time
+      `,
+      [
+        therapistId,
+        time.dayOfWeek(date),
+      ]
+    );
 
-  const timeOff = db
-    .prepare(
-      `SELECT 1 FROM time_off_requests
-       WHERE therapist_id = ? AND status = 'approved'
-         AND start_date <= ? AND end_date >= ?`
-    )
-    .get(therapistId, date, date);
+  const timeOffResult =
+    await queryable.query(
+      `
+      SELECT 1
+      FROM time_off_requests
+      WHERE therapist_id = $1
+        AND status = 'approved'
+        AND start_date <= $2
+        AND end_date >= $2
+      LIMIT 1
+      `,
+      [
+        therapistId,
+        date,
+      ]
+    );
 
-  const busy = db
-    .prepare(
-      `SELECT start_time, end_time
-       FROM appointments
-       WHERE therapist_id = ?
-         AND appointment_date = ?
-         AND status NOT IN ('cancelled', 'no-show')
-         AND id != ?`
-    )
-    .all(therapistId, date, excludeAppointmentId ?? 0);
+  const busyResult =
+    await queryable.query(
+      `
+      SELECT
+        start_time,
+        end_time
+      FROM appointments
+      WHERE therapist_id = $1
+        AND appointment_date = $2
+        AND status NOT IN (
+          'cancelled',
+          'no-show'
+        )
+        AND id != $3
+      `,
+      [
+        therapistId,
+        date,
+        excludeAppointmentId ?? 0,
+      ]
+    );
 
-  return { windows, onTimeOff: Boolean(timeOff), busy };
+  return {
+    windows: windowsResult.rows,
+    onTimeOff:
+      timeOffResult.rows.length > 0,
+    busy: busyResult.rows,
+  };
 }
 
 /** Is [start, start + duration) free for this therapist on this day? */
-function therapistIsFree(day, hours, start, duration) {
+function therapistIsFree(
+  day,
+  hours,
+  start,
+  duration
+) {
   if (day.onTimeOff) return false;
 
   const end = start + duration;
   const open = time.toMinutes(hours[0]);
   const close = time.toMinutes(hours[1]);
 
-  if (start < open || end > close) return false;
+  if (
+    start < open ||
+    end > close
+  ) {
+    return false;
+  }
 
   const insideWindow = day.windows.some(
-    (w) =>
-      start >= time.toMinutes(w.start_time) &&
-      end <= time.toMinutes(w.end_time)
+    (window) =>
+      start >=
+        time.toMinutes(
+          window.start_time
+        ) &&
+      end <=
+        time.toMinutes(
+          window.end_time
+        )
   );
 
-  if (!insideWindow) return false;
+  if (!insideWindow) {
+    return false;
+  }
 
   return !day.busy.some(
-    (b) =>
-      start < time.toMinutes(b.end_time) &&
-      end > time.toMinutes(b.start_time)
+    (busy) =>
+      start <
+        time.toMinutes(
+          busy.end_time
+        ) &&
+      end >
+        time.toMinutes(
+          busy.start_time
+        )
   );
 }
 
@@ -96,21 +167,37 @@ function therapistIsFree(day, hours, start, duration) {
 function earliestStart(date, forStaff) {
   const now = time.nowInSpa();
 
-  if (date < now.date) return Infinity;
-  if (date > now.date) return 0;
+  if (date < now.date) {
+    return Infinity;
+  }
+
+  if (date > now.date) {
+    return 0;
+  }
 
   if (forStaff) {
     // Allow the current slot (walk-ins arrive mid-slot).
-    const step = config.slotStepMinutes;
-    return Math.floor(now.minutes / step) * step;
+    const step =
+      config.slotStepMinutes;
+
+    return (
+      Math.floor(
+        now.minutes / step
+      ) * step
+    );
   }
 
-  return now.minutes + config.onlineLeadMinutes;
+  return (
+    now.minutes +
+    config.onlineLeadMinutes
+  );
 }
 
 function requireValidDate(date) {
   if (!time.isDate(date)) {
-    throw badRequest("Please choose a valid date.");
+    throw badRequest(
+      "Please choose a valid date."
+    );
   }
 }
 
@@ -118,67 +205,147 @@ function requireValidDate(date) {
  * Open start times for a service on a date.
  * Returns [{ start, end, therapistIds }] on the 30-minute grid.
  */
-function getSlots({ serviceId, date, therapistId, forStaff = false, excludeAppointmentId }) {
+async function getSlots({
+  serviceId,
+  date,
+  therapistId,
+  forStaff = false,
+  excludeAppointmentId,
+  queryable = db,
+}) {
   requireValidDate(date);
 
-  const service = getService.get(serviceId);
-  if (!service) throw notFound("That service is not available.");
+  const service = await getService(
+    serviceId,
+    queryable
+  );
 
-  const hours = config.hours[time.dayOfWeek(date)];
-
-  if (!hours) {
-    return { service, closed: true, slots: [] };
+  if (!service) {
+    throw notFound(
+      "That service is not available."
+    );
   }
 
-  const from = earliestStart(date, forStaff);
-  const step = config.slotStepMinutes;
+  const hours =
+    config.hours[
+      time.dayOfWeek(date)
+    ];
+
+  if (!hours) {
+    return {
+      service,
+      closed: true,
+      slots: [],
+    };
+  }
+
+  const from = earliestStart(
+    date,
+    forStaff
+  );
+
+  const step =
+    config.slotStepMinutes;
+
   const bySlot = new Map();
 
-  for (const therapist of eligibleTherapists(serviceId, therapistId)) {
-    const day = loadTherapistDay(therapist.id, date, excludeAppointmentId);
+  const therapists =
+    await eligibleTherapists(
+      serviceId,
+      therapistId,
+      queryable
+    );
+
+  for (const therapist of therapists) {
+    const day =
+      await loadTherapistDay(
+        therapist.id,
+        date,
+        excludeAppointmentId,
+        queryable
+      );
 
     for (const window of day.windows) {
-      const windowStart = time.toMinutes(window.start_time);
-      const windowEnd = time.toMinutes(window.end_time);
+      const windowStart =
+        time.toMinutes(
+          window.start_time
+        );
+
+      const windowEnd =
+        time.toMinutes(
+          window.end_time
+        );
 
       for (
-        let start = Math.ceil(windowStart / step) * step;
-        start + service.duration_minutes <= windowEnd;
+        let start =
+          Math.ceil(
+            windowStart / step
+          ) * step;
+        start +
+          service.duration_minutes <=
+        windowEnd;
         start += step
       ) {
-        if (start < from) continue;
-        if (!therapistIsFree(day, hours, start, service.duration_minutes)) continue;
+        if (start < from) {
+          continue;
+        }
 
-        const key = time.fromMinutes(start);
+        if (
+          !therapistIsFree(
+            day,
+            hours,
+            start,
+            service.duration_minutes
+          )
+        ) {
+          continue;
+        }
+
+        const key =
+          time.fromMinutes(start);
 
         if (!bySlot.has(key)) {
           bySlot.set(key, {
             start: key,
-            end: time.fromMinutes(start + service.duration_minutes),
+            end: time.fromMinutes(
+              start +
+                service.duration_minutes
+            ),
             therapistIds: [],
           });
         }
 
-        bySlot.get(key).therapistIds.push(therapist.id);
+        bySlot
+          .get(key)
+          .therapistIds
+          .push(therapist.id);
       }
     }
   }
 
-  const slots = [...bySlot.values()].sort((a, b) =>
+  const slots = [
+    ...bySlot.values(),
+  ].sort((a, b) =>
     a.start.localeCompare(b.start)
   );
 
-  return { service, closed: false, slots };
+  return {
+    service,
+    closed: false,
+    slots,
+  };
 }
 
 /**
  * Authoritative check used when actually saving a booking.
- * Picks a therapist when none is given. Throws if the time cannot be booked.
- * Call this inside the same transaction as the INSERT/UPDATE.
+ * Picks a therapist when none is given.
+ * Throws if the time cannot be booked.
  *
  * `preferTherapistIds` lets a reschedule try the current therapist first.
+ *
+ * `queryable` may be either the PostgreSQL pool or a transaction client.
  */
-function resolveBooking({
+async function resolveBooking({
   serviceId,
   date,
   start,
@@ -187,23 +354,49 @@ function resolveBooking({
   forStaff = false,
   excludeAppointmentId,
   preferTherapistIds = [],
+  queryable = db,
 }) {
   requireValidDate(date);
 
   if (!time.isTime(start)) {
-    throw badRequest("Please choose a valid start time.");
+    throw badRequest(
+      "Please choose a valid start time."
+    );
   }
 
-  const service = getService.get(serviceId);
-  if (!service) throw notFound("That service is not available.");
+  const service = await getService(
+    serviceId,
+    queryable
+  );
 
-  const hours = config.hours[time.dayOfWeek(date)];
-  if (!hours) throw conflict("The spa is closed on that day.");
+  if (!service) {
+    throw notFound(
+      "That service is not available."
+    );
+  }
 
-  const startMinutes = time.toMinutes(start);
-  const endMinutes = startMinutes + service.duration_minutes;
+  const hours =
+    config.hours[
+      time.dayOfWeek(date)
+    ];
 
-  if (startMinutes < earliestStart(date, forStaff)) {
+  if (!hours) {
+    throw conflict(
+      "The spa is closed on that day."
+    );
+  }
+
+  const startMinutes =
+    time.toMinutes(start);
+
+  const endMinutes =
+    startMinutes +
+    service.duration_minutes;
+
+  if (
+    startMinutes <
+    earliestStart(date, forStaff)
+  ) {
     throw conflict(
       forStaff
         ? "That time has already passed."
@@ -213,36 +406,80 @@ function resolveBooking({
 
   // A guest cannot be in two places at once.
   if (clientId) {
-    const clash = db
-      .prepare(
-        `SELECT 1 FROM appointments
-         WHERE client_id = ?
-           AND appointment_date = ?
-           AND status NOT IN ('cancelled', 'no-show')
-           AND id != ?
-           AND ? < end_time AND ? > start_time`
-      )
-      .get(clientId, date, excludeAppointmentId ?? 0, start, time.fromMinutes(endMinutes));
+    const clashResult =
+      await queryable.query(
+        `
+        SELECT 1
+        FROM appointments
+        WHERE client_id = $1
+          AND appointment_date = $2
+          AND status NOT IN (
+            'cancelled',
+            'no-show'
+          )
+          AND id != $3
+          AND $4 < end_time
+          AND $5 > start_time
+        LIMIT 1
+        `,
+        [
+          clientId,
+          date,
+          excludeAppointmentId ?? 0,
+          start,
+          time.fromMinutes(
+            endMinutes
+          ),
+        ]
+      );
 
-    if (clash) {
-      throw conflict("This client already has an appointment at that time.");
+    if (
+      clashResult.rows.length > 0
+    ) {
+      throw conflict(
+        "This client already has an appointment at that time."
+      );
     }
   }
 
-  const candidates = eligibleTherapists(serviceId, therapistId);
+  const candidates =
+    await eligibleTherapists(
+      serviceId,
+      therapistId,
+      queryable
+    );
 
-  if (therapistId && candidates.length === 0) {
-    throw badRequest("That therapist is not available for this service.");
+  if (
+    therapistId &&
+    candidates.length === 0
+  ) {
+    throw badRequest(
+      "That therapist is not available for this service."
+    );
   }
 
-  const free = candidates.filter((therapist) =>
-    therapistIsFree(
-      loadTherapistDay(therapist.id, date, excludeAppointmentId),
-      hours,
-      startMinutes,
-      service.duration_minutes
-    )
-  );
+  const free = [];
+
+  for (const therapist of candidates) {
+    const day =
+      await loadTherapistDay(
+        therapist.id,
+        date,
+        excludeAppointmentId,
+        queryable
+      );
+
+    if (
+      therapistIsFree(
+        day,
+        hours,
+        startMinutes,
+        service.duration_minutes
+      )
+    ) {
+      free.push(therapist);
+    }
+  }
 
   if (free.length === 0) {
     throw conflict(
@@ -250,28 +487,99 @@ function resolveBooking({
     );
   }
 
-  // Preferred therapists first, then whoever has the lightest day.
-  const load = db.prepare(
-    `SELECT COUNT(*) AS n FROM appointments
-     WHERE therapist_id = ? AND appointment_date = ?
-       AND status NOT IN ('cancelled', 'no-show')`
-  );
+  /*
+   * Preferred therapists first,
+   * then whoever has the lightest day.
+   */
+
+  const therapistIds =
+    free.map(
+      (therapist) =>
+        therapist.id
+    );
+
+  const loadResult =
+    await queryable.query(
+      `
+      SELECT
+        therapist_id,
+        COUNT(*)::INTEGER AS n
+      FROM appointments
+      WHERE therapist_id =
+        ANY($1::INTEGER[])
+        AND appointment_date = $2
+        AND status NOT IN (
+          'cancelled',
+          'no-show'
+        )
+      GROUP BY therapist_id
+      `,
+      [
+        therapistIds,
+        date,
+      ]
+    );
+
+  const loadByTherapist =
+    new Map(
+      loadResult.rows.map(
+        (row) => [
+          row.therapist_id,
+          row.n,
+        ]
+      )
+    );
 
   free.sort((a, b) => {
-    const pa = preferTherapistIds.includes(a.id) ? 0 : 1;
-    const pb = preferTherapistIds.includes(b.id) ? 0 : 1;
-    if (pa !== pb) return pa - pb;
+    const pa =
+      preferTherapistIds.includes(
+        a.id
+      )
+        ? 0
+        : 1;
 
-    const diff = load.get(a.id, date).n - load.get(b.id, date).n;
-    return diff !== 0 ? diff : a.id - b.id;
+    const pb =
+      preferTherapistIds.includes(
+        b.id
+      )
+        ? 0
+        : 1;
+
+    if (pa !== pb) {
+      return pa - pb;
+    }
+
+    const aLoad =
+      loadByTherapist.get(
+        a.id
+      ) ?? 0;
+
+    const bLoad =
+      loadByTherapist.get(
+        b.id
+      ) ?? 0;
+
+    const diff =
+      aLoad - bLoad;
+
+    return diff !== 0
+      ? diff
+      : a.id - b.id;
   });
 
   return {
     service,
-    therapistId: free[0].id,
+    therapistId:
+      free[0].id,
     start,
-    end: time.fromMinutes(endMinutes),
+    end: time.fromMinutes(
+      endMinutes
+    ),
   };
 }
 
-module.exports = { getSlots, resolveBooking, eligibleTherapists };
+module.exports = {
+  getSlots,
+  resolveBooking,
+  eligibleTherapists,
+};
