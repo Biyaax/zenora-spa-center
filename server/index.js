@@ -5,7 +5,10 @@ const cors = require("cors");
 
 const config = require("./config");
 const db = require("./database/postgres");
-const { HttpError } = require("./lib/errors");
+const {
+  HttpError,
+} = require("./lib/errors");
+
 const {
   startReminderScheduler,
 } = require("./services/reminders");
@@ -27,9 +30,15 @@ const managerStaffRoutes = require(
   "./routes/managerStaff"
 );
 
-const receptionDashboardRoutes = require(
-  "./routes/receptionDashboard"
-);
+const receptionDashboardRoutes =
+  require(
+    "./routes/receptionDashboard"
+  );
+
+const receptionBookingsRoutes =
+  require(
+    "./routes/receptionBookings"
+  );
 
 const app = express();
 
@@ -37,13 +46,16 @@ const app = express();
    CORS
 ========================= */
 
-const allowedOrigins = new Set([
-  "https://zenora-spa-center.vercel.app",
-]);
+const allowedOrigins =
+  new Set([
+    "https://zenora-spa-center.vercel.app",
+  ]);
 
 if (config.clientUrl) {
   allowedOrigins.add(
-    String(config.clientUrl).replace(/\/$/, "")
+    String(
+      config.clientUrl
+    ).replace(/\/$/, "")
   );
 }
 
@@ -52,18 +64,23 @@ function isAllowedOrigin(origin) {
     return true;
   }
 
-  if (allowedOrigins.has(origin)) {
+  if (
+    allowedOrigins.has(origin)
+  ) {
     return true;
   }
 
   try {
-    const url = new URL(origin);
+    const url =
+      new URL(origin);
 
     const isLocalhost =
       url.protocol === "http:" &&
       (
-        url.hostname === "localhost" ||
-        url.hostname === "127.0.0.1"
+        url.hostname ===
+          "localhost" ||
+        url.hostname ===
+          "127.0.0.1"
       );
 
     if (isLocalhost) {
@@ -79,11 +96,7 @@ function isAllowedOrigin(origin) {
         "-biyaaxs-projects.vercel.app"
       );
 
-    if (isZenoraPreview) {
-      return true;
-    }
-
-    return false;
+    return isZenoraPreview;
   } catch {
     return false;
   }
@@ -91,9 +104,17 @@ function isAllowedOrigin(origin) {
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        return callback(null, true);
+    origin(
+      origin,
+      callback
+    ) {
+      if (
+        isAllowedOrigin(origin)
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       console.warn(
@@ -101,7 +122,9 @@ app.use(
       );
 
       return callback(
-        new Error("Not allowed by CORS")
+        new Error(
+          "Not allowed by CORS"
+        )
       );
     },
   })
@@ -122,31 +145,42 @@ app.get(
   async (req, res) => {
     const serviceResult =
       await db.query(`
-        SELECT COUNT(*)::INTEGER AS count
+        SELECT
+          COUNT(*)::INTEGER
+            AS count
         FROM services
       `);
 
     const roleResult =
       await db.query(`
-        SELECT COUNT(*)::INTEGER AS count
+        SELECT
+          COUNT(*)::INTEGER
+            AS count
         FROM roles
       `);
 
-    res.json({
+    return res.json({
       success: true,
+
       message:
         "Zenora API is running.",
-      database: "connected",
+
+      database:
+        "connected",
+
       services:
-        serviceResult.rows[0].count,
+        serviceResult
+          .rows[0].count,
+
       roles:
-        roleResult.rows[0].count,
+        roleResult
+          .rows[0].count,
     });
   }
 );
 
 /* =========================
-   SHARED ROUTES
+   PUBLIC / SHARED
 ========================= */
 
 app.use(
@@ -168,21 +202,28 @@ app.use(
    RECEPTIONIST
 ========================= */
 
-/*
-  Real Receptionist dashboard
-  backed by PostgreSQL/Supabase.
-*/
 app.use(
   "/api/reception/dashboard",
   requireAuth,
-  requireRole("Receptionist"),
+  requireRole(
+    "Receptionist"
+  ),
   receptionDashboardRoutes
+);
+
+app.use(
+  "/api/reception/bookings",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionBookingsRoutes
 );
 
 /*
   Existing Receptionist routes:
-  bookings, check-in/out, payments,
-  clients, walk-ins, etc.
+  walk-ins, payments, client records,
+  check-in/out, etc.
 */
 app.use(
   "/api/reception",
@@ -196,7 +237,9 @@ app.use(
 app.use(
   "/api/therapist",
   requireAuth,
-  requireRole("Massage Therapist"),
+  requireRole(
+    "Massage Therapist"
+  ),
   therapistRoutes
 );
 
@@ -207,27 +250,37 @@ app.use(
 app.use(
   "/api/manager",
   requireAuth,
-  requireRole("Spa Manager"),
+  requireRole(
+    "Spa Manager"
+  ),
   managerStaffRoutes
 );
 
 app.use(
   "/api/manager",
   requireAuth,
-  requireRole("Spa Manager"),
+  requireRole(
+    "Spa Manager"
+  ),
   managerRoutes
 );
 
 /* =========================
-   404
+   API 404
 ========================= */
 
-app.use("/api", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Not found.",
-  });
-});
+app.use(
+  "/api",
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        success: false,
+        message:
+          "Not found.",
+      });
+  }
+);
 
 /* =========================
    ERRORS
@@ -235,16 +288,24 @@ app.use("/api", (req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     if (
-      error instanceof HttpError
+      error instanceof
+      HttpError
     ) {
       return res
         .status(error.status)
         .json({
           success: false,
-          message: error.message,
-          details: error.details,
+          message:
+            error.message,
+          details:
+            error.details,
         });
     }
 
@@ -290,7 +351,9 @@ app.use(
    LOCAL SERVER
 ========================= */
 
-if (require.main === module) {
+if (
+  require.main === module
+) {
   app.listen(
     config.port,
     () => {
