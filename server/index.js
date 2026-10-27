@@ -51,6 +51,11 @@ const receptionPaymentsRoutes =
     "./routes/receptionPayments"
   );
 
+const receptionClientsRoutes =
+  require(
+    "./routes/receptionClients"
+  );
+
 const app = express();
 
 /* =========================
@@ -148,7 +153,7 @@ app.use(
 );
 
 /* =========================
-   HEALTH
+   HEALTH CHECK
 ========================= */
 
 app.get(
@@ -172,8 +177,10 @@ app.get(
 
     return res.json({
       success: true,
+
       message:
         "Zenora API is running.",
+
       database:
         "connected",
 
@@ -189,7 +196,7 @@ app.get(
 );
 
 /* =========================
-   SHARED
+   PUBLIC / SHARED
 ========================= */
 
 app.use(
@@ -247,8 +254,18 @@ app.use(
   receptionPaymentsRoutes
 );
 
+app.use(
+  "/api/reception/clients",
+  requireAuth,
+  requireRole(
+    "Receptionist"
+  ),
+  receptionClientsRoutes
+);
+
 /*
-  Existing Receptionist API.
+  Existing Receptionist routes:
+  walk-ins, booking-on-behalf, etc.
 */
 app.use(
   "/api/reception",

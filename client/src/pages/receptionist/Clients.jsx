@@ -1,235 +1,425 @@
-import { useState } from "react";
-import ReceptionistSidebar from "../../components/ReceptionistSidebar";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-const initialClients = [
-  {
-    id: "CLI-1001",
-    firstName: "Bea",
-    lastName: "Mendoza",
-    email: "bea@example.com",
-    phone: "09171234567",
-    address: "Quezon City",
-    totalBookings: 5,
-    lastVisit: "2026-10-24",
-  },
-  {
-    id: "CLI-1002",
-    firstName: "Angela",
-    lastName: "Cruz",
-    email: "angela@example.com",
-    phone: "09181234567",
-    address: "Caloocan City",
-    totalBookings: 3,
-    lastVisit: "2026-10-18",
-  },
-  {
-    id: "CLI-1003",
-    firstName: "Carla",
-    lastName: "Gomez",
-    email: "carla@example.com",
-    phone: "09191234567",
-    address: "Manila",
-    totalBookings: 7,
-    lastVisit: "2026-10-24",
-  },
-  {
-    id: "CLI-1004",
-    firstName: "Daniel",
-    lastName: "Reyes",
-    email: "daniel@example.com",
-    phone: "09201234567",
-    address: "Pasig City",
-    totalBookings: 2,
-    lastVisit: "2026-09-30",
-  },
-];
+import {
+  useNavigate,
+} from "react-router-dom";
+
+import ReceptionistSidebar from "../../components/ReceptionistSidebar";
+import ReceptionistTopbar from "../../components/ReceptionistTopbar";
+
+import {
+  staffRequest,
+} from "../../api/staffAuth";
+
+function formatDate(date) {
+  if (!date) {
+    return "No visits yet";
+  }
+
+  return new Date(
+    `${date}T00:00:00`
+  ).toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+}
 
 function Clients() {
-  const [clients, setClients] =
-    useState(initialClients);
+  const navigate =
+    useNavigate();
 
-  const [search, setSearch] = useState("");
+  const [
+    clients,
+    setClients,
+  ] = useState([]);
 
-  const [selectedClient, setSelectedClient] =
-    useState(null);
+  const [
+    summary,
+    setSummary,
+  ] = useState({
+    totalClients: 0,
+    totalBookings: 0,
+  });
 
-  const [editData, setEditData] = useState({
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
+  const [
+    selectedClient,
+    setSelectedClient,
+  ] = useState(null);
+
+  const [
+    editData,
+    setEditData,
+  ] = useState({
     firstName: "",
     lastName: "",
     email: "",
     phone: "",
-    address: "",
+    notes: "",
   });
 
-  const [message, setMessage] = useState("");
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const filteredClients = clients.filter(
-    (client) => {
-      const keyword = search
-        .trim()
-        .toLowerCase();
+  const [
+    saving,
+    setSaving,
+  ] = useState(false);
 
-      const fullName =
-        `${client.firstName} ${client.lastName}`.toLowerCase();
+  const [
+    error,
+    setError,
+  ] = useState("");
 
-      return (
-        client.id
-          .toLowerCase()
-          .includes(keyword) ||
-        fullName.includes(keyword) ||
-        client.email
-          .toLowerCase()
-          .includes(keyword) ||
-        client.phone.includes(keyword)
-      );
-    }
-  );
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
-  const formatDate = (date) => {
-    if (!date) {
-      return "No visits yet";
-    }
+  const [
+    modalError,
+    setModalError,
+  ] = useState("");
 
-    return new Date(
-      `${date}T00:00:00`
-    ).toLocaleDateString(
-      "en-US",
-      {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }
-    );
-  };
+  const loadClients =
+    useCallback(
+      async () => {
+        const token =
+          sessionStorage.getItem(
+            "zenoraStaffToken"
+          );
 
-  const openEditModal = (client) => {
-    setSelectedClient(client);
-
-    setEditData({
-      firstName: client.firstName,
-      lastName: client.lastName,
-      email: client.email,
-      phone: client.phone,
-      address: client.address,
-    });
-
-    setMessage("");
-  };
-
-  const closeEditModal = () => {
-    setSelectedClient(null);
-
-    setEditData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      address: "",
-    });
-
-    setMessage("");
-  };
-
-  const handleEditChange = (event) => {
-    const { name, value } = event.target;
-
-    setEditData((current) => ({
-      ...current,
-      [name]: value,
-    }));
-
-    setMessage("");
-  };
-
-  const saveClientChanges = (event) => {
-    event.preventDefault();
-
-    if (
-      !editData.firstName.trim() ||
-      !editData.lastName.trim() ||
-      !editData.email.trim() ||
-      !editData.phone.trim()
-    ) {
-      setMessage(
-        "Please complete all required fields."
-      );
-
-      return;
-    }
-
-    setClients((current) =>
-      current.map((client) =>
-        client.id === selectedClient.id
-          ? {
-              ...client,
-              firstName:
-                editData.firstName.trim(),
-              lastName:
-                editData.lastName.trim(),
-              email:
-                editData.email.trim(),
-              phone:
-                editData.phone.trim(),
-              address:
-                editData.address.trim(),
+        if (!token) {
+          navigate(
+            "/staff/login",
+            {
+              replace: true,
             }
-          : client
-      )
+          );
+
+          return;
+        }
+
+        setLoading(true);
+        setError("");
+
+        try {
+          const data =
+            await staffRequest(
+              "/api/reception/clients",
+              token
+            );
+
+          setClients(
+            Array.isArray(
+              data.clients
+            )
+              ? data.clients
+              : []
+          );
+
+          setSummary({
+            totalClients:
+              Number(
+                data.summary
+                  ?.totalClients ||
+                  0
+              ),
+
+            totalBookings:
+              Number(
+                data.summary
+                  ?.totalBookings ||
+                  0
+              ),
+          });
+        } catch (err) {
+          setClients([]);
+
+          setError(
+            err.message ||
+              "Unable to load client records."
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [navigate]
     );
 
-    closeEditModal();
-  };
+  useEffect(() => {
+    loadClients();
+  }, [loadClients]);
+
+  const filteredClients =
+    useMemo(() => {
+      const keyword =
+        search
+          .trim()
+          .toLowerCase();
+
+      if (!keyword) {
+        return clients;
+      }
+
+      return clients.filter(
+        (client) => {
+          const fullName =
+            `${client.firstName} ${client.lastName}`
+              .toLowerCase();
+
+          return [
+            client.clientId,
+            fullName,
+            client.email,
+            client.phone,
+          ].some(
+            (field) =>
+              String(
+                field || ""
+              )
+                .toLowerCase()
+                .includes(
+                  keyword
+                )
+          );
+        }
+      );
+    }, [
+      clients,
+      search,
+    ]);
+
+  const openEditModal =
+    (client) => {
+      setSelectedClient(
+        client
+      );
+
+      setEditData({
+        firstName:
+          client.firstName ||
+          "",
+
+        lastName:
+          client.lastName ||
+          "",
+
+        email:
+          client.email || "",
+
+        phone:
+          client.phone || "",
+
+        notes:
+          client.notes || "",
+      });
+
+      setModalError("");
+      setSuccessMessage("");
+    };
+
+  const closeEditModal =
+    () => {
+      if (saving) {
+        return;
+      }
+
+      setSelectedClient(null);
+
+      setEditData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        notes: "",
+      });
+
+      setModalError("");
+    };
+
+  const handleEditChange =
+    (event) => {
+      const {
+        name,
+        value,
+      } = event.target;
+
+      setEditData(
+        (current) => ({
+          ...current,
+          [name]: value,
+        })
+      );
+
+      setModalError("");
+    };
+
+  const saveClientChanges =
+    async (event) => {
+      event.preventDefault();
+
+      if (
+        !selectedClient
+      ) {
+        return;
+      }
+
+      if (
+        !editData.firstName.trim() ||
+        !editData.lastName.trim() ||
+        !editData.phone.trim()
+      ) {
+        setModalError(
+          "First name, last name, and phone number are required."
+        );
+
+        return;
+      }
+
+      const token =
+        sessionStorage.getItem(
+          "zenoraStaffToken"
+        );
+
+      if (!token) {
+        navigate(
+          "/staff/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+      try {
+        setSaving(true);
+        setModalError("");
+        setError("");
+        setSuccessMessage("");
+
+        await staffRequest(
+          `/api/reception/clients/${selectedClient.id}`,
+          token,
+          {
+            method: "PATCH",
+
+            body:
+              JSON.stringify({
+                firstName:
+                  editData.firstName.trim(),
+
+                lastName:
+                  editData.lastName.trim(),
+
+                email:
+                  editData.email.trim(),
+
+                phone:
+                  editData.phone.trim(),
+
+                notes:
+                  editData.notes.trim(),
+              }),
+          }
+        );
+
+        setSelectedClient(null);
+
+        setEditData({
+          firstName: "",
+          lastName: "",
+          email: "",
+          phone: "",
+          notes: "",
+        });
+
+        setSuccessMessage(
+          "Client record updated successfully."
+        );
+
+        await loadClients();
+      } catch (err) {
+        setModalError(
+          err.message ||
+            "Unable to update client record."
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
 
   return (
     <div className="receptionist-layout">
       <ReceptionistSidebar />
 
       <main className="receptionist-main">
-        {/* Topbar */}
-        <div className="receptionist-topbar">
-          <div>
-            <p className="text-muted mb-1">
-              Receptionist Portal
-            </p>
-
-            <h3 className="mb-0">
-              Client Records
-            </h3>
-          </div>
-
-          <div className="receptionist-topbar-user">
-            <i className="far fa-bell mr-3"></i>
-
-            <div className="receptionist-user-circle">
-              R
-            </div>
-
-            <div className="ml-2">
-              <strong>
-                Receptionist
-              </strong>
-
-              <small className="d-block text-muted">
-                Front Desk
-              </small>
-            </div>
-          </div>
-        </div>
+        <ReceptionistTopbar
+          title="Client Records"
+        />
 
         <div className="receptionist-content">
-          {/* Heading */}
           <div className="mb-4">
             <h1 className="mb-2">
               Client Records
             </h1>
 
             <p className="text-muted mb-0">
-              Search client information and
-              update their contact details.
+              Search client
+              information and
+              update their contact
+              details.
             </p>
           </div>
 
-          {/* Summary */}
+          {error && (
+            <div
+              className="alert alert-danger d-flex justify-content-between align-items-center"
+              role="alert"
+            >
+              <span>
+                {error}
+              </span>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger ml-3"
+                onClick={
+                  loadClients
+                }
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {successMessage && (
+            <div
+              className="alert alert-success"
+              role="status"
+            >
+              {
+                successMessage
+              }
+            </div>
+          )}
+
           <div className="row mb-2">
             <div className="col-md-6 mb-4">
               <div className="receptionist-stat-card">
@@ -239,7 +429,9 @@ function Clients() {
                   </p>
 
                   <h2 className="mb-0">
-                    {clients.length}
+                    {loading
+                      ? "—"
+                      : summary.totalClients}
                   </h2>
                 </div>
 
@@ -257,12 +449,9 @@ function Clients() {
                   </p>
 
                   <h2 className="mb-0">
-                    {clients.reduce(
-                      (total, client) =>
-                        total +
-                        client.totalBookings,
-                      0
-                    )}
+                    {loading
+                      ? "—"
+                      : summary.totalBookings}
                   </h2>
                 </div>
 
@@ -273,7 +462,6 @@ function Clients() {
             </div>
           </div>
 
-          {/* Search */}
           <div className="receptionist-panel mb-4">
             <div className="receptionist-search-box">
               <i className="fas fa-search"></i>
@@ -282,14 +470,18 @@ function Clients() {
                 type="text"
                 placeholder="Search client ID, name, email, or phone..."
                 value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
+                onChange={(
+                  event
+                ) =>
+                  setSearch(
+                    event.target
+                      .value
+                  )
                 }
               />
             </div>
           </div>
 
-          {/* Client Table */}
           <div className="receptionist-panel">
             <div className="mb-4">
               <h4 className="mb-1">
@@ -297,39 +489,84 @@ function Clients() {
               </h4>
 
               <p className="text-muted mb-0">
-                {
-                  filteredClients.length
-                }{" "}
-                client
-                {filteredClients.length !== 1
-                  ? "s"
-                  : ""}{" "}
-                found
+                {loading
+                  ? "Loading client records..."
+                  : `${
+                      filteredClients.length
+                    } client${
+                      filteredClients.length ===
+                      1
+                        ? ""
+                        : "s"
+                    } found`}
               </p>
             </div>
 
-            {filteredClients.length > 0 ? (
+            {loading ? (
+              <div className="receptionist-empty-state">
+                <i className="fas fa-spinner fa-spin"></i>
+
+                <h4>
+                  Loading Clients
+                </h4>
+
+                <p>
+                  Retrieving client
+                  records from the
+                  database.
+                </p>
+              </div>
+            ) : filteredClients.length >
+              0 ? (
               <div className="table-responsive">
                 <table className="table receptionist-table receptionist-client-table">
                   <thead>
                     <tr>
-                      <th>Client ID</th>
-                      <th>Name</th>
-                      <th>Contact</th>
-                      <th>Address</th>
-                      <th>Bookings</th>
-                      <th>Last Visit</th>
-                      <th>Action</th>
+                      <th>
+                        Client ID
+                      </th>
+
+                      <th>
+                        Name
+                      </th>
+
+                      <th>
+                        Contact
+                      </th>
+
+                      <th>
+                        Account Type
+                      </th>
+
+                      <th>
+                        Bookings
+                      </th>
+
+                      <th>
+                        Last Visit
+                      </th>
+
+                      <th>
+                        Action
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {filteredClients.map(
-                      (client) => (
-                        <tr key={client.id}>
+                      (
+                        client
+                      ) => (
+                        <tr
+                          key={
+                            client.id
+                          }
+                        >
                           <td>
                             <strong>
-                              {client.id}
+                              {
+                                client.clientId
+                              }
                             </strong>
                           </td>
 
@@ -346,17 +583,28 @@ function Clients() {
 
                           <td>
                             <span>
-                              {client.phone}
+                              {client.phone ||
+                                "—"}
                             </span>
 
                             <small className="d-block text-muted">
-                              {client.email}
+                              {client.email ||
+                                "No email"}
                             </small>
                           </td>
 
                           <td>
-                            {client.address ||
-                              "—"}
+                            <span
+                              className={`badge ${
+                                client.hasAccount
+                                  ? "badge-primary"
+                                  : "badge-secondary"
+                              } px-3 py-2`}
+                            >
+                              {client.hasAccount
+                                ? "Online Account"
+                                : "Walk-In / Manual"}
+                            </span>
                           </td>
 
                           <td>
@@ -400,8 +648,9 @@ function Clients() {
                 </h4>
 
                 <p>
-                  No client records match
-                  your search.
+                  {search.trim()
+                    ? "No client records match your search."
+                    : "There are currently no client records in the database."}
                 </p>
               </div>
             )}
@@ -409,14 +658,16 @@ function Clients() {
         </div>
       </main>
 
-      {/* Edit Client Modal */}
       {selectedClient && (
         <div className="receptionist-modal-backdrop">
           <div className="receptionist-client-modal">
             <button
               type="button"
               className="receptionist-modal-close"
-              onClick={closeEditModal}
+              onClick={
+                closeEditModal
+              }
+              disabled={saving}
             >
               ×
             </button>
@@ -426,11 +677,27 @@ function Clients() {
             </h3>
 
             <p className="text-muted mb-4">
-              {selectedClient.id}
+              {
+                selectedClient.clientId
+              }
             </p>
 
+            {selectedClient.hasAccount && (
+              <div className="alert alert-info">
+                This client has an
+                online Zenora
+                account. Their email
+                belongs to their
+                login account and
+                cannot be changed by
+                Receptionist staff.
+              </div>
+            )}
+
             <form
-              onSubmit={saveClientChanges}
+              onSubmit={
+                saveClientChanges
+              }
             >
               <div className="row">
                 <div className="col-md-6">
@@ -449,6 +716,8 @@ function Clients() {
                       onChange={
                         handleEditChange
                       }
+                      maxLength="80"
+                      required
                     />
                   </div>
                 </div>
@@ -469,6 +738,8 @@ function Clients() {
                       onChange={
                         handleEditChange
                       }
+                      maxLength="80"
+                      required
                     />
                   </div>
                 </div>
@@ -483,40 +754,59 @@ function Clients() {
                   type="tel"
                   name="phone"
                   className="form-control"
-                  value={editData.phone}
+                  value={
+                    editData.phone
+                  }
                   onChange={
                     handleEditChange
                   }
+                  required
                 />
               </div>
 
               <div className="form-group">
                 <label>
-                  Email *
+                  Email
                 </label>
 
                 <input
                   type="email"
                   name="email"
                   className="form-control"
-                  value={editData.email}
+                  value={
+                    editData.email
+                  }
                   onChange={
                     handleEditChange
                   }
+                  disabled={
+                    selectedClient.hasAccount
+                  }
                 />
+
+                {selectedClient.hasAccount && (
+                  <small className="text-muted">
+                    Account email
+                    cannot be edited
+                    by Receptionist
+                    staff.
+                  </small>
+                )}
               </div>
 
               <div className="form-group">
                 <label>
-                  Address
+                  Notes
                 </label>
 
                 <textarea
-                  name="address"
+                  name="notes"
                   className="form-control"
-                  rows="3"
+                  rows="4"
+                  maxLength="500"
+                  placeholder="Optional client notes"
                   value={
-                    editData.address
+                    editData.notes
                   }
                   onChange={
                     handleEditChange
@@ -524,9 +814,11 @@ function Clients() {
                 />
               </div>
 
-              {message && (
+              {modalError && (
                 <div className="alert alert-danger">
-                  {message}
+                  {
+                    modalError
+                  }
                 </div>
               )}
 
@@ -537,6 +829,7 @@ function Clients() {
                   onClick={
                     closeEditModal
                   }
+                  disabled={saving}
                 >
                   Cancel
                 </button>
@@ -544,9 +837,13 @@ function Clients() {
                 <button
                   type="submit"
                   className="btn btn-primary"
+                  disabled={saving}
                 >
                   <i className="fas fa-save mr-2"></i>
-                  Save Changes
+
+                  {saving
+                    ? "Saving..."
+                    : "Save Changes"}
                 </button>
               </div>
             </form>
