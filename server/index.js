@@ -7,6 +7,10 @@ const config = require("./config");
 const db = require("./database/postgres");
 const { HttpError } = require("./lib/errors");
 const { startReminderScheduler } = require("./services/reminders");
+const { requireAuth, requireRole } = require("./middleware/auth");
+
+const therapistRoutes = require("./routes/therapistRoutes");
+const managerRoutes = require("./routes/managerRoutes");
 
 const app = express();
 
@@ -43,20 +47,46 @@ app.get("/api/health", async (req, res) => {
 });
 
 /* =========================
-   ROUTES
+   SHARED ROUTES
 ========================= */
 
 // Public: services, packages, therapists, hours, availability
 app.use("/api", require("./routes/catalog"));
 
-// Register / login / current user
+// Register / login / current user for all roles
 app.use("/api/auth", require("./routes/auth"));
 
-// Guest: bookings (+ notifications for every logged-in user)
+// Guest
 app.use("/api/me", require("./routes/guest"));
 
-// Receptionist tools
+// Receptionist
 app.use("/api/reception", require("./routes/reception"));
+
+/* =========================
+   THERAPIST
+========================= */
+
+app.use(
+  "/api/therapist",
+  requireAuth,
+  requireRole("Massage Therapist"),
+  therapistRoutes
+);
+
+/* =========================
+   MANAGER
+========================= */
+
+app.use(
+  "/api/manager",
+  requireAuth,
+  requireRole("Spa Manager"),
+  managerRoutes
+);
+
+/* =========================
+   404
+========================= */
 
 app.use("/api", (req, res) => {
   res.status(404).json({
@@ -79,7 +109,6 @@ app.use((error, req, res, next) => {
     });
   }
 
-  // Malformed JSON body
   if (error.type === "entity.parse.failed") {
     return res.status(400).json({
       success: false,
@@ -89,7 +118,7 @@ app.use((error, req, res, next) => {
 
   console.error(error);
 
-  res.status(500).json({
+  return res.status(500).json({
     success: false,
     message:
       "Something went wrong on our side. Please try again.",
@@ -106,7 +135,8 @@ if (require.main === module) {
       `Zenora server running on http://localhost:${config.port}`
     );
 
-    // Keep the old reminder scheduler for local development only.
+    // Local development only.
+    // Vercel should not rely on a persistent setInterval scheduler.
     startReminderScheduler();
   });
 }

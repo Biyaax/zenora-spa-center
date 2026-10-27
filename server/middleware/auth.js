@@ -7,15 +7,37 @@ const {
 
 async function requireAuth(req, res, next) {
   try {
-    const header = req.headers.authorization || "";
-    const [scheme, value] = header.split(" ");
+    const authorization = req.headers.authorization || "";
 
-    const payload =
-      scheme === "Bearer"
-        ? token.verify(value)
-        : null;
+    const match =
+      /^Bearer\s+(\S+)$/i.exec(
+        authorization.trim()
+      );
 
-    if (!payload) {
+    const payload = match
+      ? token.verify(match[1])
+      : null;
+
+    /*
+     * The shared auth route signs a numeric subject.
+     * Accept the numeric-string equivalent as well.
+     */
+    const subject = payload?.sub;
+
+    const userId =
+      (
+        typeof subject === "number" ||
+        typeof subject === "string"
+      ) &&
+      /^[1-9]\d*$/.test(
+        String(subject)
+      )
+        ? Number(subject)
+        : NaN;
+
+    if (
+      !Number.isSafeInteger(userId)
+    ) {
       return next(
         unauthorized(
           "Your session has expired. Please log in again."
@@ -23,8 +45,10 @@ async function requireAuth(req, res, next) {
       );
     }
 
-    // Look the user up on every request so deactivated accounts
-    // and role changes take effect immediately.
+    /*
+     * Recheck the account and role on every request so
+     * deactivation or role reassignment takes effect immediately.
+     */
     const result = await db.query(
       `
       SELECT
@@ -36,41 +60,64 @@ async function requireAuth(req, res, next) {
         u.is_active,
         r.name AS role
       FROM users u
-      JOIN roles r ON r.id = u.role_id
+      JOIN roles r
+        ON r.id = u.role_id
       WHERE u.id = $1
       `,
-      [payload.sub]
+      [userId]
     );
 
     const user = result.rows[0];
 
-    if (!user || !user.is_active) {
+    if (
+      !user ||
+      !user.is_active
+    ) {
       return next(
-        unauthorized("This account is not active.")
+        unauthorized(
+          "This account is not active."
+        )
       );
     }
 
     req.user = user;
-    next();
+
+    return next();
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (
-      !req.user ||
-      !roles.includes(req.user.role)
-    ) {
-      return next(forbidden());
+    if (!req.user) {
+      return next(
+        unauthorized(
+          "Authentication required."
+        )
+      );
     }
 
-    next();
+    if (
+      !roles.includes(
+        req.user.role
+      )
+    ) {
+      return next(
+        forbidden()
+      );
+    }
+
+    return next();
   };
 }
 
+/*
+ * Some Manager/Therapist routes import `authenticate`.
+ * Keep it as an alias so we use one shared authentication system.
+ */
 module.exports = {
   requireAuth,
+  authenticate: requireAuth,
   requireRole,
 };
