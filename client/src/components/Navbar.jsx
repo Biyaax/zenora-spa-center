@@ -1,16 +1,39 @@
-import { useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  NavLink,
+  useLocation,
+} from "react-router-dom";
 
 import AuthModal from "./AuthModal";
 import { useAuth } from "../context/AuthContext";
 
 function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [pagesOpen, setPagesOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [
+    menuOpen,
+    setMenuOpen,
+  ] = useState(false);
 
-  const location = useLocation();
+  const [
+    pagesOpen,
+    setPagesOpen,
+  ] = useState(false);
+
+  const [
+    accountOpen,
+    setAccountOpen,
+  ] = useState(false);
+
+  const [
+    authModalOpen,
+    setAuthModalOpen,
+  ] = useState(false);
+
+  const location =
+    useLocation();
 
   const {
     user,
@@ -21,13 +44,13 @@ function Navbar() {
   const pageRoutes = [
     "/appointment",
     "/opening",
-    "/team",
     "/testimonial",
   ];
 
-  const pagesActive = pageRoutes.includes(
-    location.pathname
-  );
+  const pagesActive =
+    pageRoutes.includes(
+      location.pathname
+    );
 
   useEffect(() => {
     setMenuOpen(false);
@@ -35,11 +58,19 @@ function Navbar() {
     setAccountOpen(false);
   }, [location.pathname]);
 
-  const navLinkClass = ({ isActive }) =>
-    `nav-item nav-link ${isActive ? "active" : ""}`;
+  const navLinkClass = ({
+    isActive,
+  }) =>
+    `nav-item nav-link ${
+      isActive ? "active" : ""
+    }`;
 
-  const dropdownLinkClass = ({ isActive }) =>
-    `dropdown-item ${isActive ? "active" : ""}`;
+  const dropdownLinkClass = ({
+    isActive,
+  }) =>
+    `dropdown-item ${
+      isActive ? "active" : ""
+    }`;
 
   const openAuthModal = () => {
     setMenuOpen(false);
@@ -61,6 +92,7 @@ function Navbar() {
       <div className="container-fluid p-0">
         <nav className="navbar navbar-expand-lg bg-white navbar-light py-3 py-lg-0 px-lg-5">
           {/* Logo */}
+
           <NavLink
             to="/"
             className="navbar-brand ml-lg-3"
@@ -73,106 +105,134 @@ function Navbar() {
           </NavLink>
 
           {/* Mobile Hamburger */}
+
           <button
             type="button"
             className="navbar-toggler"
             onClick={() =>
-              setMenuOpen((current) => !current)
+              setMenuOpen(
+                (current) =>
+                  !current
+              )
             }
             aria-label="Toggle navigation"
-            aria-expanded={menuOpen}
+            aria-expanded={
+              menuOpen
+            }
             aria-controls="navbarCollapse"
           >
             <span className="navbar-toggler-icon"></span>
           </button>
 
           {/* Navigation */}
+
           <div
             id="navbarCollapse"
             className={`collapse navbar-collapse justify-content-between px-lg-3 ${
-              menuOpen ? "show" : ""
+              menuOpen
+                ? "show"
+                : ""
             }`}
           >
             <div className="navbar-nav m-auto py-0">
               <NavLink
                 to="/"
                 end
-                className={navLinkClass}
+                className={
+                  navLinkClass
+                }
               >
                 Home
               </NavLink>
 
               <NavLink
                 to="/about"
-                className={navLinkClass}
+                className={
+                  navLinkClass
+                }
               >
                 About
               </NavLink>
 
               <NavLink
                 to="/services"
-                className={navLinkClass}
+                className={
+                  navLinkClass
+                }
               >
                 Services
               </NavLink>
 
               <NavLink
                 to="/pricing"
-                className={navLinkClass}
+                className={
+                  navLinkClass
+                }
               >
                 Pricing
               </NavLink>
 
               {/* Pages */}
+
               <div
                 className={`nav-item dropdown ${
-                  pagesOpen ? "show" : ""
+                  pagesOpen
+                    ? "show"
+                    : ""
                 }`}
               >
                 <button
                   type="button"
                   className={`nav-link dropdown-toggle border-0 bg-transparent ${
-                    pagesActive ? "active" : ""
+                    pagesActive
+                      ? "active"
+                      : ""
                   }`}
                   onClick={() =>
                     setPagesOpen(
-                      (current) => !current
+                      (
+                        current
+                      ) =>
+                        !current
                     )
                   }
-                  aria-expanded={pagesOpen}
+                  aria-expanded={
+                    pagesOpen
+                  }
                 >
                   Pages
                 </button>
 
                 <div
                   className={`dropdown-menu rounded-0 m-0 ${
-                    pagesOpen ? "show" : ""
+                    pagesOpen
+                      ? "show"
+                      : ""
                   }`}
                 >
                   <NavLink
                     to="/appointment"
-                    className={dropdownLinkClass}
+                    className={
+                      dropdownLinkClass
+                    }
                   >
                     Appointment
                   </NavLink>
 
                   <NavLink
                     to="/opening"
-                    className={dropdownLinkClass}
+                    className={
+                      dropdownLinkClass
+                    }
                   >
                     Open Hours
                   </NavLink>
 
                   <NavLink
-                    to="/team"
-                    className={dropdownLinkClass}
-                  >
-                    Therapists
-                  </NavLink>
-
-                  <NavLink
                     to="/testimonial"
-                    className={dropdownLinkClass}
+                    className={
+                      dropdownLinkClass
+                    }
                   >
                     Testimonial
                   </NavLink>
@@ -181,27 +241,38 @@ function Navbar() {
 
               <NavLink
                 to="/contact"
-                className={navLinkClass}
+                className={
+                  navLinkClass
+                }
               >
                 Contact
               </NavLink>
 
               {/* Mobile Account */}
+
               <div className="d-lg-none mt-3">
                 <NavLink
                   to="/staff/login"
                   className="btn btn-outline-primary btn-block mb-2"
                 >
-                  <i className="fa fa-user-lock mr-2" aria-hidden="true"></i>
+                  <i
+                    className="fa fa-user-lock mr-2"
+                    aria-hidden="true"
+                  ></i>
+
                   Staff Login
                 </NavLink>
+
                 {!isLoggedIn ? (
                   <button
                     type="button"
                     className="btn btn-primary btn-block"
-                    onClick={openAuthModal}
+                    onClick={
+                      openAuthModal
+                    }
                   >
                     <i className="fa fa-user mr-2"></i>
+
                     Login
                   </button>
                 ) : (
@@ -211,13 +282,16 @@ function Navbar() {
                       className="btn btn-primary btn-block mb-2"
                     >
                       <i className="fa fa-user mr-2"></i>
+
                       My Account
                     </NavLink>
 
                     <button
                       type="button"
                       className="btn btn-outline-primary btn-block"
-                      onClick={handleLogout}
+                      onClick={
+                        handleLogout
+                      }
                     >
                       Logout
                     </button>
@@ -227,27 +301,38 @@ function Navbar() {
             </div>
 
             {/* Desktop Account */}
+
             <div className="d-none d-lg-flex align-items-center">
               <NavLink
                 to="/staff/login"
                 className="btn btn-outline-primary mr-2"
               >
-                <i className="fa fa-user-lock mr-2" aria-hidden="true"></i>
+                <i
+                  className="fa fa-user-lock mr-2"
+                  aria-hidden="true"
+                ></i>
+
                 Staff Login
               </NavLink>
+
               {!isLoggedIn ? (
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={openAuthModal}
+                  onClick={
+                    openAuthModal
+                  }
                 >
                   <i className="fa fa-user mr-2"></i>
+
                   Login
                 </button>
               ) : (
                 <div
                   className={`nav-item dropdown ${
-                    accountOpen ? "show" : ""
+                    accountOpen
+                      ? "show"
+                      : ""
                   }`}
                 >
                   <button
@@ -255,19 +340,27 @@ function Navbar() {
                     className="btn btn-primary dropdown-toggle"
                     onClick={() =>
                       setAccountOpen(
-                        (current) => !current
+                        (
+                          current
+                        ) =>
+                          !current
                       )
                     }
-                    aria-expanded={accountOpen}
+                    aria-expanded={
+                      accountOpen
+                    }
                   >
                     <i className="fa fa-user mr-2"></i>
 
-                    {user?.firstName || "My Account"}
+                    {user?.firstName ||
+                      "My Account"}
                   </button>
 
                   <div
                     className={`dropdown-menu dropdown-menu-right rounded-0 ${
-                      accountOpen ? "show" : ""
+                      accountOpen
+                        ? "show"
+                        : ""
                     }`}
                   >
                     <NavLink
@@ -275,6 +368,7 @@ function Navbar() {
                       className="dropdown-item"
                     >
                       <i className="fa fa-home mr-2"></i>
+
                       Dashboard
                     </NavLink>
 
@@ -283,6 +377,7 @@ function Navbar() {
                       className="dropdown-item"
                     >
                       <i className="fa fa-calendar mr-2"></i>
+
                       My Appointments
                     </NavLink>
 
@@ -291,6 +386,7 @@ function Navbar() {
                       className="dropdown-item"
                     >
                       <i className="fa fa-bell mr-2"></i>
+
                       Notifications
                     </NavLink>
 
@@ -299,9 +395,12 @@ function Navbar() {
                     <button
                       type="button"
                       className="dropdown-item"
-                      onClick={handleLogout}
+                      onClick={
+                        handleLogout
+                      }
                     >
                       <i className="fa fa-sign-out-alt mr-2"></i>
+
                       Logout
                     </button>
                   </div>
@@ -313,9 +412,13 @@ function Navbar() {
       </div>
 
       <AuthModal
-        isOpen={authModalOpen}
+        isOpen={
+          authModalOpen
+        }
         onClose={() =>
-          setAuthModalOpen(false)
+          setAuthModalOpen(
+            false
+          )
         }
       />
     </>

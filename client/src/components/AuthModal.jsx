@@ -3,19 +3,35 @@ import {
   useState,
 } from "react";
 
-import { useAuth } from "../context/AuthContext";
+import {
+  useAuth,
+} from "../context/AuthContext";
 
-function AuthModal({ isOpen, onClose }) {
-  const { login, register } = useAuth();
+function AuthModal({
+  isOpen,
+  onClose,
+}) {
+  const {
+    login,
+    register,
+    resendVerification,
+  } = useAuth();
 
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] =
+    useState("login");
 
-  const [loginData, setLoginData] = useState({
+  const [
+    loginData,
+    setLoginData,
+  ] = useState({
     email: "",
     password: "",
   });
 
-  const [registerData, setRegisterData] = useState({
+  const [
+    registerData,
+    setRegisterData,
+  ] = useState({
     firstName: "",
     lastName: "",
     email: "",
@@ -24,25 +40,57 @@ function AuthModal({ isOpen, onClose }) {
     confirmPassword: "",
   });
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [
+    verificationEmail,
+    setVerificationEmail,
+  ] = useState("");
+
+  const [
+    verificationNotice,
+    setVerificationNotice,
+  ] = useState("");
+
+  const [
+    message,
+    setMessage,
+  ] = useState("");
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const [
+    busy,
+    setBusy,
+  ] = useState(false);
+
+  /* =======================================================
+     MODAL BEHAVIOR
+  ======================================================= */
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    const handleEscape = (event) => {
-      if (event.key === "Escape" && !busy) {
-        onClose();
-      }
-    };
+    const handleEscape =
+      (event) => {
+        if (
+          event.key ===
+            "Escape" &&
+          !busy
+        ) {
+          onClose();
+        }
+      };
 
     const previousOverflow =
-      document.body.style.overflow;
+      document.body.style
+        .overflow;
 
-    document.body.style.overflow = "hidden";
+    document.body.style
+      .overflow = "hidden";
 
     window.addEventListener(
       "keydown",
@@ -50,7 +98,8 @@ function AuthModal({ isOpen, onClose }) {
     );
 
     return () => {
-      document.body.style.overflow =
+      document.body.style
+        .overflow =
         previousOverflow;
 
       window.removeEventListener(
@@ -58,199 +107,327 @@ function AuthModal({ isOpen, onClose }) {
         handleEscape
       );
     };
-  }, [isOpen, onClose, busy]);
+  }, [
+    isOpen,
+    onClose,
+    busy,
+  ]);
 
   useEffect(() => {
     if (isOpen) {
       setMessage("");
       setError("");
     }
-  }, [mode, isOpen]);
+  }, [
+    mode,
+    isOpen,
+  ]);
 
   if (!isOpen) {
     return null;
   }
 
-  const handleLoginChange = (event) => {
-    const { name, value } = event.target;
+  /* =======================================================
+     INPUT HANDLERS
+  ======================================================= */
 
-    setLoginData((current) => ({
-      ...current,
-      [name]: value,
-    }));
+  const handleLoginChange =
+    (event) => {
+      const {
+        name,
+        value,
+      } = event.target;
 
-    setMessage("");
-    setError("");
-  };
-
-  const handleRegisterChange = (event) => {
-    const { name, value } = event.target;
-
-    setRegisterData((current) => ({
-      ...current,
-      [name]: value,
-    }));
-
-    setMessage("");
-    setError("");
-  };
-
-  const handleLoginSubmit = async (event) => {
-    event.preventDefault();
-
-    if (busy) {
-      return;
-    }
-
-    setMessage("");
-    setError("");
-
-    const email = loginData.email.trim();
-    const password = loginData.password;
-
-    if (!email || !password) {
-      setError(
-        "Please enter your email and password."
+      setLoginData(
+        (current) => ({
+          ...current,
+          [name]: value,
+        })
       );
-      return;
-    }
 
-    setBusy(true);
-
-    try {
-      await login(email, password);
-
-      setLoginData({
-        email: "",
-        password: "",
-      });
-
-      setError("");
       setMessage("");
-
-      onClose();
-    } catch (err) {
-      setError(
-        err?.message ||
-          "Unable to log in. Please try again."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRegisterSubmit = async (event) => {
-    event.preventDefault();
-
-    if (busy) {
-      return;
-    }
-
-    setMessage("");
-    setError("");
-
-    const cleanedData = {
-      firstName:
-        registerData.firstName.trim(),
-
-      lastName:
-        registerData.lastName.trim(),
-
-      email:
-        registerData.email.trim(),
-
-      phone:
-        registerData.phone.trim(),
-
-      password:
-        registerData.password,
-
-      confirmPassword:
-        registerData.confirmPassword,
+      setError("");
     };
 
-    if (
-      !cleanedData.firstName ||
-      !cleanedData.lastName ||
-      !cleanedData.email ||
-      !cleanedData.phone ||
-      !cleanedData.password ||
-      !cleanedData.confirmPassword
-    ) {
-      setError(
-        "Please complete all required fields."
+  const handleRegisterChange =
+    (event) => {
+      const {
+        name,
+        value,
+      } = event.target;
+
+      setRegisterData(
+        (current) => ({
+          ...current,
+          [name]: value,
+        })
       );
-      return;
-    }
 
-    if (
-      cleanedData.password !==
-      cleanedData.confirmPassword
-    ) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      await register(cleanedData);
-
-      setRegisterData({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phone: "",
-        password: "",
-        confirmPassword: "",
-      });
-
-      setError("");
       setMessage("");
+      setError("");
+    };
 
-      onClose();
-    } catch (err) {
-      setError(
-        err?.message ||
+  /* =======================================================
+     LOGIN
+  ======================================================= */
+
+  const handleLoginSubmit =
+    async (event) => {
+      event.preventDefault();
+
+      if (busy) {
+        return;
+      }
+
+      setMessage("");
+      setError("");
+
+      const email =
+        loginData.email.trim();
+
+      const password =
+        loginData.password;
+
+      if (
+        !email ||
+        !password
+      ) {
+        setError(
+          "Please enter your email and password."
+        );
+
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        await login(
+          email,
+          password
+        );
+
+        setLoginData({
+          email: "",
+          password: "",
+        });
+
+        setError("");
+        setMessage("");
+
+        onClose();
+      } catch (err) {
+        setError(
+          err?.message ||
+          "Unable to log in. Please try again."
+        );
+      } finally {
+        setBusy(false);
+      }
+    };
+
+  /* =======================================================
+     REGISTER
+  ======================================================= */
+
+  const handleRegisterSubmit =
+    async (event) => {
+      event.preventDefault();
+
+      if (busy) {
+        return;
+      }
+
+      setMessage("");
+      setError("");
+
+      const cleanedData = {
+        firstName:
+          registerData
+            .firstName
+            .trim(),
+
+        lastName:
+          registerData
+            .lastName
+            .trim(),
+
+        email:
+          registerData
+            .email
+            .trim()
+            .toLowerCase(),
+
+        phone:
+          registerData
+            .phone
+            .trim(),
+
+        password:
+          registerData
+            .password,
+
+        confirmPassword:
+          registerData
+            .confirmPassword,
+      };
+
+      if (
+        !cleanedData.firstName ||
+        !cleanedData.lastName ||
+        !cleanedData.email ||
+        !cleanedData.phone ||
+        !cleanedData.password ||
+        !cleanedData
+          .confirmPassword
+      ) {
+        setError(
+          "Please complete all required fields."
+        );
+
+        return;
+      }
+
+      if (
+        cleanedData.password !==
+        cleanedData
+          .confirmPassword
+      ) {
+        setError(
+          "Passwords do not match."
+        );
+
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        const result =
+          await register(
+            cleanedData
+          );
+
+        setVerificationEmail(
+          result?.email ||
+          cleanedData.email
+        );
+
+        setVerificationNotice(
+          result?.message ||
+          "Your account was created. Please check your email and verify your account before signing in."
+        );
+
+        setRegisterData({
+          firstName: "",
+          lastName: "",
+          email: "",
+          phone: "",
+          password: "",
+          confirmPassword: "",
+        });
+
+        /*
+         * Do NOT close the modal.
+         * Show the verification screen.
+         */
+        setMode(
+          "verify"
+        );
+      } catch (err) {
+        setError(
+          err?.message ||
           "Unable to create your account. Please try again."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
+        );
+      } finally {
+        setBusy(false);
+      }
+    };
 
-  const showLogin = () => {
-    if (busy) {
-      return;
-    }
+  /* =======================================================
+     RESEND VERIFICATION
+  ======================================================= */
 
-    setMode("login");
-    setMessage("");
-    setError("");
-  };
+  const handleResend =
+    async () => {
+      if (
+        busy ||
+        !verificationEmail
+      ) {
+        return;
+      }
 
-  const showRegister = () => {
-    if (busy) {
-      return;
-    }
+      setMessage("");
+      setError("");
+      setBusy(true);
 
-    setMode("register");
-    setMessage("");
-    setError("");
-  };
+      try {
+        const result =
+          await resendVerification(
+            verificationEmail
+          );
 
-  const closeModal = () => {
-    if (!busy) {
-      onClose();
-    }
-  };
+        setMessage(
+          result?.message ||
+          "A new verification email has been sent."
+        );
+      } catch (err) {
+        setError(
+          err?.message ||
+          "Unable to resend the verification email."
+        );
+      } finally {
+        setBusy(false);
+      }
+    };
+
+  /* =======================================================
+     MODE HELPERS
+  ======================================================= */
+
+  const showLogin =
+    () => {
+      if (busy) {
+        return;
+      }
+
+      setMode("login");
+      setMessage("");
+      setError("");
+    };
+
+  const showRegister =
+    () => {
+      if (busy) {
+        return;
+      }
+
+      setMode("register");
+      setMessage("");
+      setError("");
+    };
+
+  const closeModal =
+    () => {
+      if (!busy) {
+        setMessage("");
+        setError("");
+
+        onClose();
+      }
+    };
+
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <div
       className="auth-modal-backdrop"
       onMouseDown={(event) => {
         if (
-          event.target === event.currentTarget
+          event.target ===
+          event.currentTarget
         ) {
           closeModal();
         }
@@ -262,7 +439,6 @@ function AuthModal({ isOpen, onClose }) {
         aria-modal="true"
         aria-labelledby="auth-modal-title"
       >
-        {/* Close Button */}
         <button
           type="button"
           className="auth-modal-close"
@@ -273,7 +449,10 @@ function AuthModal({ isOpen, onClose }) {
           &times;
         </button>
 
-        {/* ================= LOGIN ================= */}
+        {/* =============================================
+            LOGIN
+        ============================================= */}
+
         {mode === "login" && (
           <>
             <div className="text-center mb-4">
@@ -294,7 +473,11 @@ function AuthModal({ isOpen, onClose }) {
               </p>
             </div>
 
-            <form onSubmit={handleLoginSubmit}>
+            <form
+              onSubmit={
+                handleLoginSubmit
+              }
+            >
               <div className="form-group">
                 <label htmlFor="modal-login-email">
                   Email Address
@@ -304,8 +487,12 @@ function AuthModal({ isOpen, onClose }) {
                   id="modal-login-email"
                   type="email"
                   name="email"
-                  value={loginData.email}
-                  onChange={handleLoginChange}
+                  value={
+                    loginData.email
+                  }
+                  onChange={
+                    handleLoginChange
+                  }
                   className="form-control p-4"
                   placeholder="Enter your email"
                   autoComplete="email"
@@ -323,8 +510,12 @@ function AuthModal({ isOpen, onClose }) {
                   id="modal-login-password"
                   type="password"
                   name="password"
-                  value={loginData.password}
-                  onChange={handleLoginChange}
+                  value={
+                    loginData.password
+                  }
+                  onChange={
+                    handleLoginChange
+                  }
                   className="form-control p-4"
                   placeholder="Enter your password"
                   autoComplete="current-password"
@@ -384,12 +575,15 @@ function AuthModal({ isOpen, onClose }) {
             </form>
 
             <p className="text-center mt-4 mb-0">
-              Don't have an account?{" "}
+              Don't have an
+              account?{" "}
 
               <button
                 type="button"
                 className="auth-text-button font-weight-bold"
-                onClick={showRegister}
+                onClick={
+                  showRegister
+                }
                 disabled={busy}
               >
                 Register here
@@ -398,8 +592,12 @@ function AuthModal({ isOpen, onClose }) {
           </>
         )}
 
-        {/* ================= REGISTER ================= */}
-        {mode === "register" && (
+        {/* =============================================
+            REGISTER
+        ============================================= */}
+
+        {mode ===
+          "register" && (
           <>
             <div className="text-center mb-4">
               <h6 className="d-inline-block bg-light text-primary text-uppercase py-1 px-2">
@@ -414,12 +612,17 @@ function AuthModal({ isOpen, onClose }) {
               </h2>
 
               <p className="text-muted mb-0">
-                Create a guest account to book and
-                manage your appointments.
+                Create a guest account
+                to book and manage your
+                appointments.
               </p>
             </div>
 
-            <form onSubmit={handleRegisterSubmit}>
+            <form
+              onSubmit={
+                handleRegisterSubmit
+              }
+            >
               <div className="form-row">
                 <div className="col-sm-6">
                   <div className="form-group">
@@ -431,8 +634,13 @@ function AuthModal({ isOpen, onClose }) {
                       id="modal-first-name"
                       type="text"
                       name="firstName"
-                      value={registerData.firstName}
-                      onChange={handleRegisterChange}
+                      value={
+                        registerData
+                          .firstName
+                      }
+                      onChange={
+                        handleRegisterChange
+                      }
                       className="form-control p-4"
                       placeholder="First name"
                       autoComplete="given-name"
@@ -452,8 +660,13 @@ function AuthModal({ isOpen, onClose }) {
                       id="modal-last-name"
                       type="text"
                       name="lastName"
-                      value={registerData.lastName}
-                      onChange={handleRegisterChange}
+                      value={
+                        registerData
+                          .lastName
+                      }
+                      onChange={
+                        handleRegisterChange
+                      }
                       className="form-control p-4"
                       placeholder="Last name"
                       autoComplete="family-name"
@@ -473,8 +686,12 @@ function AuthModal({ isOpen, onClose }) {
                   id="modal-register-email"
                   type="email"
                   name="email"
-                  value={registerData.email}
-                  onChange={handleRegisterChange}
+                  value={
+                    registerData.email
+                  }
+                  onChange={
+                    handleRegisterChange
+                  }
                   className="form-control p-4"
                   placeholder="Enter your email"
                   autoComplete="email"
@@ -492,8 +709,12 @@ function AuthModal({ isOpen, onClose }) {
                   id="modal-phone"
                   type="tel"
                   name="phone"
-                  value={registerData.phone}
-                  onChange={handleRegisterChange}
+                  value={
+                    registerData.phone
+                  }
+                  onChange={
+                    handleRegisterChange
+                  }
                   className="form-control p-4"
                   placeholder="09171234567"
                   autoComplete="tel"
@@ -513,8 +734,13 @@ function AuthModal({ isOpen, onClose }) {
                       id="modal-register-password"
                       type="password"
                       name="password"
-                      value={registerData.password}
-                      onChange={handleRegisterChange}
+                      value={
+                        registerData
+                          .password
+                      }
+                      onChange={
+                        handleRegisterChange
+                      }
                       className="form-control p-4"
                       placeholder="Password"
                       autoComplete="new-password"
@@ -535,9 +761,12 @@ function AuthModal({ isOpen, onClose }) {
                       type="password"
                       name="confirmPassword"
                       value={
-                        registerData.confirmPassword
+                        registerData
+                          .confirmPassword
                       }
-                      onChange={handleRegisterChange}
+                      onChange={
+                        handleRegisterChange
+                      }
                       className="form-control p-4"
                       placeholder="Confirm password"
                       autoComplete="new-password"
@@ -554,12 +783,6 @@ function AuthModal({ isOpen, onClose }) {
                 </p>
               )}
 
-              {message && (
-                <p className="text-success text-center">
-                  {message}
-                </p>
-              )}
-
               <button
                 type="submit"
                 className="btn btn-primary btn-block py-3"
@@ -572,7 +795,8 @@ function AuthModal({ isOpen, onClose }) {
             </form>
 
             <p className="text-center mt-4 mb-0">
-              Already have an account?{" "}
+              Already have an
+              account?{" "}
 
               <button
                 type="button"
@@ -583,6 +807,92 @@ function AuthModal({ isOpen, onClose }) {
                 Login here
               </button>
             </p>
+          </>
+        )}
+
+        {/* =============================================
+            EMAIL VERIFICATION
+        ============================================= */}
+
+        {mode === "verify" && (
+          <>
+            <div className="text-center">
+              <div className="mb-4">
+                <i className="fas fa-envelope fa-3x text-primary"></i>
+              </div>
+
+              <h6 className="d-inline-block bg-light text-primary text-uppercase py-1 px-2">
+                Email Verification
+              </h6>
+
+              <h2
+                id="auth-modal-title"
+                className="mt-3 mb-3"
+              >
+                Check Your Email
+              </h2>
+
+              <p className="text-muted">
+                {verificationNotice}
+              </p>
+
+              {verificationEmail && (
+                <p className="mb-4">
+                  We sent the verification
+                  link to:
+                  <br />
+
+                  <strong>
+                    {verificationEmail}
+                  </strong>
+                </p>
+              )}
+
+              <p className="text-muted">
+                Click the verification link
+                in the email before signing
+                in to your Zenora account.
+              </p>
+
+              {error && (
+                <p className="text-danger">
+                  {error}
+                </p>
+              )}
+
+              {message && (
+                <p className="text-success">
+                  {message}
+                </p>
+              )}
+
+              <button
+                type="button"
+                className="btn btn-primary btn-block py-3 mt-4"
+                onClick={
+                  handleResend
+                }
+                disabled={
+                  busy ||
+                  !verificationEmail
+                }
+              >
+                {busy
+                  ? "Sending..."
+                  : "Resend Verification Email"}
+              </button>
+
+              <button
+                type="button"
+                className="auth-text-button font-weight-bold mt-4"
+                onClick={
+                  showLogin
+                }
+                disabled={busy}
+              >
+                Back to Login
+              </button>
+            </div>
           </>
         )}
       </div>

@@ -1,139 +1,597 @@
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import ReceptionistSidebar from "../../components/ReceptionistSidebar";
-import services from "../../data/services";
-import therapists from "../../data/therapists";
 
-const timeOptions = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-];
+const FALLBACK_API_BASE =
+  "https://zenora-spa-api-git-bea-supabase-migration-biyaaxs-projects.vercel.app";
 
-function WalkInBooking() {
-  const today = new Date().toISOString().split("T")[0];
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  FALLBACK_API_BASE
+).replace(/\/$/, "");
 
-  const [formData, setFormData] = useState({
-    clientName: "",
-    phone: "",
-    email: "",
-    serviceId: "",
-    therapistId: "",
-    date: today,
-    time: "",
-    specialRequest: "",
-  });
+function getSpaToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
-  const [message, setMessage] = useState("");
+  const values = {};
 
-  const selectedService = services.find(
-    (service) =>
-      service.id === Number(formData.serviceId)
+  for (const part of parts) {
+    values[part.type] = part.value;
+  }
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function formatTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const [hourText, minuteText] = value
+    .slice(0, 5)
+    .split(":");
+
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute)
+  ) {
+    return value;
+  }
+
+  const suffix = hour >= 12 ? "PM" : "AM";
+
+  const displayHour =
+    hour % 12 === 0
+      ? 12
+      : hour % 12;
+
+  return `${displayHour}:${String(minute).padStart(
+    2,
+    "0"
+  )} ${suffix}`;
+}
+
+async function receptionistRequest(
+  path,
+  {
+    method = "GET",
+    body,
+    query,
+  } = {}
+) {
+  const token =
+    sessionStorage.getItem("zenoraStaffToken");
+
+  if (!token) {
+    const error = new Error(
+      "Your receptionist session has expired. Please log in again."
+    );
+
+    error.status = 401;
+
+    throw error;
+  }
+
+  const url = new URL(
+    `${API_BASE}${path}`
   );
 
-  const availableTherapists = useMemo(() => {
-    if (!selectedService) {
-      return [];
+  if (query) {
+    Object.entries(query).forEach(
+      ([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          value !== ""
+        ) {
+          url.searchParams.set(
+            key,
+            String(value)
+          );
+        }
+      }
+    );
+  }
+
+  const response = await fetch(
+    url.toString(),
+    {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body
+          ? {
+              "Content-Type":
+                "application/json",
+            }
+          : {}),
+      },
+      ...(body
+        ? {
+            body: JSON.stringify(body),
+          }
+        : {}),
+    }
+  );
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(
+      data.message ||
+        data.error ||
+        "Something went wrong."
+    );
+
+    error.status = response.status;
+    error.data = data;
+
+    throw error;
+  }
+
+  return data;
+}
+
+async function loadServices() {
+  const response = await fetch(
+    `${API_BASE}/api/services`
+  );
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message ||
+        data.error ||
+        "Unable to load services."
+    );
+  }
+
+  return data.services || [];
+}
+
+async function loadWalkInAvailability(
+  serviceId,
+  date
+) {
+  /*
+   * The receptionist availability route should
+   * use forStaff=true on the backend.
+   *
+   * We also retain a public availability fallback
+   * so the page does not die if the receptionist
+   * route uses the older route set.
+   */
+
+  try {
+    const data =
+      await receptionistRequest(
+        "/api/reception/availability",
+        {
+          query: {
+            serviceId,
+            date,
+          },
+        }
+      );
+
+    return data.availability || data;
+  } catch (error) {
+    if (error.status !== 404) {
+      throw error;
     }
 
-    return therapists.filter((therapist) =>
-      therapist.specialties.includes(
-        selectedService.name
-      )
+    const url = new URL(
+      `${API_BASE}/api/availability`
     );
-  }, [selectedService]);
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
+    url.searchParams.set(
+      "serviceId",
+      String(serviceId)
+    );
+
+    url.searchParams.set(
+      "date",
+      date
+    );
+
+    const response = await fetch(
+      url.toString()
+    );
+
+    const data = await response
+      .json()
+      .catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.message ||
+          data.error ||
+          "Unable to load available times."
+      );
+    }
+
+    return data;
+  }
+}
+
+async function createWalkInBooking(body) {
+  /*
+   * Your receptionist API has used both
+   * /appointments and /bookings naming during
+   * the recent integration work.
+   *
+   * Try the current appointments contract first,
+   * then the newer bookings alias only when the
+   * first path does not exist.
+   */
+
+  try {
+    return await receptionistRequest(
+      "/api/reception/appointments",
+      {
+        method: "POST",
+        body,
+      }
+    );
+  } catch (error) {
+    if (error.status !== 404) {
+      throw error;
+    }
+
+    return receptionistRequest(
+      "/api/reception/bookings",
+      {
+        method: "POST",
+        body,
+      }
+    );
+  }
+}
+
+function WalkInBooking() {
+  const today = getSpaToday();
+
+  const [services, setServices] =
+    useState([]);
+
+  const [servicesLoading, setServicesLoading] =
+    useState(true);
+
+  const [servicesError, setServicesError] =
+    useState("");
+
+  const [slots, setSlots] =
+    useState([]);
+
+  const [slotsLoading, setSlotsLoading] =
+    useState(false);
+
+  const [slotsError, setSlotsError] =
+    useState("");
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  const [messageType, setMessageType] =
+    useState("");
+
+  const [formData, setFormData] =
+    useState({
+      firstName: "",
+      lastName: "",
+      phone: "",
+      email: "",
+      serviceId: "",
+      time: "",
+      specialRequest: "",
+      checkInNow: false,
+    });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchServices() {
+      setServicesLoading(true);
+      setServicesError("");
+
+      try {
+        const rows =
+          await loadServices();
+
+        if (!cancelled) {
+          setServices(
+            rows.filter(
+              (service) =>
+                service.is_active ===
+                  undefined ||
+                Number(
+                  service.is_active
+                ) === 1
+            )
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setServicesError(
+            error.message ||
+              "Unable to load services."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setServicesLoading(false);
+        }
+      }
+    }
+
+    fetchServices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchSlots() {
+      if (!formData.serviceId) {
+        setSlots([]);
+        setSlotsError("");
+
+        return;
+      }
+
+      setSlotsLoading(true);
+      setSlotsError("");
+      setSlots([]);
+
+      setFormData((current) => ({
+        ...current,
+        time: "",
+      }));
+
+      try {
+        const data =
+          await loadWalkInAvailability(
+            Number(formData.serviceId),
+            today
+          );
+
+        if (cancelled) {
+          return;
+        }
+
+        const availableSlots =
+          Array.isArray(data?.slots)
+            ? data.slots
+            : [];
+
+        setSlots(availableSlots);
+
+        if (
+          data?.closed ||
+          availableSlots.length === 0
+        ) {
+          setSlotsError(
+            data?.closed
+              ? "The spa is closed today."
+              : "There are no available times remaining for this service today."
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSlotsError(
+            error.message ||
+              "Unable to load available times."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setSlotsLoading(false);
+        }
+      }
+    }
+
+    fetchSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    formData.serviceId,
+    today,
+  ]);
+
+  const selectedService =
+    useMemo(
+      () =>
+        services.find(
+          (service) =>
+            String(service.id) ===
+            String(formData.serviceId)
+        ) || null,
+      [
+        services,
+        formData.serviceId,
+      ]
+    );
+
+  const selectedSlot =
+    useMemo(
+      () =>
+        slots.find(
+          (slot) =>
+            slot.start === formData.time
+        ) || null,
+      [
+        slots,
+        formData.time,
+      ]
+    );
+
+  function handleChange(event) {
+    const {
+      name,
+      value,
+      type,
+      checked,
+    } = event.target;
 
     setFormData((current) => ({
       ...current,
-      [name]: value,
 
-      ...(name === "serviceId"
-        ? {
-            therapistId: "",
-          }
-        : {}),
+      [name]:
+        type === "checkbox"
+          ? checked
+          : value,
     }));
 
     setMessage("");
-  };
+    setMessageType("");
+  }
 
-  const handleSubmit = (event) => {
+  async function handleSubmit(event) {
     event.preventDefault();
 
+    setMessage("");
+    setMessageType("");
+
     if (
-      !formData.clientName.trim() ||
+      !formData.firstName.trim() ||
+      !formData.lastName.trim() ||
       !formData.phone.trim() ||
       !formData.serviceId ||
-      !formData.therapistId ||
-      !formData.date ||
       !formData.time
     ) {
       setMessage(
         "Please complete all required fields."
       );
 
+      setMessageType("error");
+
       return;
     }
 
-    const therapist = therapists.find(
-      (item) =>
-        item.id === Number(formData.therapistId)
-    );
+    setSubmitting(true);
 
-    const walkInBooking = {
-      bookingType: "Walk-In",
+    try {
+      const payload = {
+        type: "walk-in",
 
-      clientName: formData.clientName.trim(),
-      phone: formData.phone.trim(),
-      email: formData.email.trim(),
+        client: {
+          firstName:
+            formData.firstName.trim(),
 
-      serviceId: Number(formData.serviceId),
-      service: selectedService?.name,
+          lastName:
+            formData.lastName.trim(),
 
-      therapistId: Number(formData.therapistId),
-      therapist: therapist?.name,
+          phone:
+            formData.phone.trim(),
 
-      date: formData.date,
-      time: formData.time,
+          email:
+            formData.email.trim(),
 
-      price: selectedService?.price,
-      durationMinutes:
-        selectedService?.durationMinutes,
+          notes: "",
+        },
 
-      specialRequest:
-        formData.specialRequest.trim(),
+        serviceId:
+          Number(formData.serviceId),
 
-      status: "Confirmed",
-    };
+        /*
+         * No therapistId is sent.
+         * The backend chooses an eligible,
+         * available therapist for this
+         * service and time.
+         */
 
-    console.log(
-      "Walk-in booking:",
-      walkInBooking
-    );
+        date: today,
 
-    setMessage(
-      "Walk-in appointment created successfully."
-    );
+        start:
+          formData.time,
 
-    setFormData({
-      clientName: "",
-      phone: "",
-      email: "",
-      serviceId: "",
-      therapistId: "",
-      date: today,
-      time: "",
-      specialRequest: "",
-    });
-  };
+        specialRequest:
+          formData.specialRequest.trim(),
+
+        checkInNow:
+          formData.checkInNow,
+      };
+
+      const result =
+        await createWalkInBooking(
+          payload
+        );
+
+      const appointment =
+        result.appointment ||
+        result.booking ||
+        result;
+
+      const bookingId =
+        appointment?.id
+          ? `APT-${String(
+              appointment.id
+            ).padStart(4, "0")}`
+          : "";
+
+      setMessage(
+        bookingId
+          ? `Walk-in appointment ${bookingId} created successfully and saved to the database.`
+          : "Walk-in appointment created successfully and saved to the database."
+      );
+
+      setMessageType("success");
+
+      setFormData({
+        firstName: "",
+        lastName: "",
+        phone: "",
+        email: "",
+        serviceId: "",
+        time: "",
+        specialRequest: "",
+        checkInNow: false,
+      });
+
+      setSlots([]);
+      setSlotsError("");
+    } catch (error) {
+      if (error.status === 401) {
+        setMessage(
+          "Your receptionist session has expired. Please log in again."
+        );
+      } else {
+        setMessage(
+          error.message ||
+            "Unable to create the walk-in appointment."
+        );
+      }
+
+      setMessageType("error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="receptionist-layout">
@@ -171,7 +629,6 @@ function WalkInBooking() {
           </div>
         </div>
 
-        {/* Content */}
         <div className="receptionist-content">
           <div className="mb-4">
             <h1 className="mb-2">
@@ -179,9 +636,8 @@ function WalkInBooking() {
             </h1>
 
             <p className="text-muted mb-0">
-              Enter the client's information
-              and create an appointment on their
-              behalf.
+              Create a booking for a client
+              who is visiting the spa today.
             </p>
           </div>
 
@@ -193,33 +649,65 @@ function WalkInBooking() {
                   Client Information
                 </h4>
 
-                <div className="form-group">
-                  <label>
-                    Client Name *
-                  </label>
+                <div className="row">
+                  <div className="col-md-6">
+                    <div className="form-group">
+                      <label htmlFor="firstName">
+                        First Name *
+                      </label>
 
-                  <input
-                    type="text"
-                    name="clientName"
-                    className="form-control"
-                    placeholder="Enter full name"
-                    value={
-                      formData.clientName
-                    }
-                    onChange={
-                      handleChange
-                    }
-                  />
+                      <input
+                        id="firstName"
+                        type="text"
+                        name="firstName"
+                        className="form-control"
+                        placeholder="Enter first name"
+                        value={
+                          formData.firstName
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        maxLength="80"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="col-md-6">
+                    <div className="form-group">
+                      <label htmlFor="lastName">
+                        Last Name *
+                      </label>
+
+                      <input
+                        id="lastName"
+                        type="text"
+                        name="lastName"
+                        className="form-control"
+                        placeholder="Enter last name"
+                        value={
+                          formData.lastName
+                        }
+                        onChange={
+                          handleChange
+                        }
+                        maxLength="80"
+                        required
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="row">
                   <div className="col-md-6">
                     <div className="form-group">
-                      <label>
+                      <label htmlFor="phone">
                         Phone Number *
                       </label>
 
                       <input
+                        id="phone"
                         type="tel"
                         name="phone"
                         className="form-control"
@@ -230,17 +718,19 @@ function WalkInBooking() {
                         onChange={
                           handleChange
                         }
+                        required
                       />
                     </div>
                   </div>
 
                   <div className="col-md-6">
                     <div className="form-group">
-                      <label>
+                      <label htmlFor="email">
                         Email
                       </label>
 
                       <input
+                        id="email"
                         type="email"
                         name="email"
                         className="form-control"
@@ -263,11 +753,12 @@ function WalkInBooking() {
                 </h4>
 
                 <div className="form-group">
-                  <label>
+                  <label htmlFor="serviceId">
                     Service *
                   </label>
 
                   <select
+                    id="serviceId"
                     name="serviceId"
                     className="form-control"
                     value={
@@ -276,9 +767,18 @@ function WalkInBooking() {
                     onChange={
                       handleChange
                     }
+                    disabled={
+                      servicesLoading ||
+                      Boolean(
+                        servicesError
+                      )
+                    }
+                    required
                   >
                     <option value="">
-                      Select service
+                      {servicesLoading
+                        ? "Loading services..."
+                        : "Select service"}
                     </option>
 
                     {services.map(
@@ -291,86 +791,78 @@ function WalkInBooking() {
                             service.id
                           }
                         >
-                          {service.name} — ₱
-                          {service.price.toLocaleString()}
+                          {
+                            service.name
+                          }{" "}
+                          — ₱
+                          {Number(
+                            service.price ||
+                              0
+                          ).toLocaleString()}
                         </option>
                       )
                     )}
                   </select>
+
+                  {servicesError && (
+                    <small className="text-danger d-block mt-2">
+                      {
+                        servicesError
+                      }
+                    </small>
+                  )}
                 </div>
 
                 <div className="form-group">
                   <label>
-                    Therapist *
+                    Therapist
                   </label>
 
-                  <select
-                    name="therapistId"
+                  <input
+                    type="text"
                     className="form-control"
-                    value={
-                      formData.therapistId
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    disabled={
-                      !formData.serviceId
-                    }
-                  >
-                    <option value="">
-                      {formData.serviceId
-                        ? "Select therapist"
-                        : "Select a service first"}
-                    </option>
+                    value="Automatically assigned based on availability"
+                    readOnly
+                  />
 
-                    {availableTherapists.map(
-                      (therapist) => (
-                        <option
-                          key={
-                            therapist.id
-                          }
-                          value={
-                            therapist.id
-                          }
-                        >
-                          {
-                            therapist.name
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
+                  <small className="form-text text-muted">
+                    Zenora will assign an
+                    eligible therapist who
+                    is available for the
+                    selected service and
+                    time.
+                  </small>
                 </div>
 
                 <div className="row">
                   <div className="col-md-6">
                     <div className="form-group">
                       <label>
-                        Date *
+                        Date
                       </label>
 
                       <input
                         type="date"
-                        name="date"
                         className="form-control"
-                        min={today}
-                        value={
-                          formData.date
-                        }
-                        onChange={
-                          handleChange
-                        }
+                        value={today}
+                        readOnly
                       />
+
+                      <small className="form-text text-muted">
+                        Walk-in bookings
+                        are for today only.
+                      </small>
                     </div>
                   </div>
 
                   <div className="col-md-6">
                     <div className="form-group">
-                      <label>
-                        Time *
+                      <label htmlFor="time">
+                        Available Time *
                       </label>
 
                       <select
+                        id="time"
                         name="time"
                         className="form-control"
                         value={
@@ -379,39 +871,69 @@ function WalkInBooking() {
                         onChange={
                           handleChange
                         }
+                        disabled={
+                          !formData.serviceId ||
+                          slotsLoading ||
+                          slots.length === 0
+                        }
+                        required
                       >
                         <option value="">
-                          Select time
+                          {!formData.serviceId
+                            ? "Select a service first"
+                            : slotsLoading
+                            ? "Checking availability..."
+                            : slots.length ===
+                              0
+                            ? "No available times"
+                            : "Select time"}
                         </option>
 
-                        {timeOptions.map(
-                          (time) => (
+                        {slots.map(
+                          (slot) => (
                             <option
                               key={
-                                time
+                                slot.start
                               }
                               value={
-                                time
+                                slot.start
                               }
                             >
-                              {time}
+                              {formatTime(
+                                slot.start
+                              )}
+                              {slot.end
+                                ? ` – ${formatTime(
+                                    slot.end
+                                  )}`
+                                : ""}
                             </option>
                           )
                         )}
                       </select>
+
+                      {slotsError && (
+                        <small className="text-danger d-block mt-2">
+                          {
+                            slotsError
+                          }
+                        </small>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label>
+                  <label htmlFor="specialRequest">
                     Special Request
                   </label>
 
                   <textarea
+                    id="specialRequest"
                     name="specialRequest"
                     className="form-control"
                     rows="4"
+                    maxLength="500"
                     placeholder="Optional notes or special requests"
                     value={
                       formData.specialRequest
@@ -422,15 +944,40 @@ function WalkInBooking() {
                   />
                 </div>
 
+                <div className="form-group">
+                  <div className="custom-control custom-checkbox">
+                    <input
+                      id="checkInNow"
+                      type="checkbox"
+                      name="checkInNow"
+                      className="custom-control-input"
+                      checked={
+                        formData.checkInNow
+                      }
+                      onChange={
+                        handleChange
+                      }
+                    />
+
+                    <label
+                      className="custom-control-label"
+                      htmlFor="checkInNow"
+                    >
+                      Check this client in
+                      immediately
+                    </label>
+                  </div>
+                </div>
+
                 {message && (
                   <div
                     className={`alert ${
-                      message.includes(
-                        "successfully"
-                      )
+                      messageType ===
+                      "success"
                         ? "alert-success"
                         : "alert-danger"
                     }`}
+                    role="alert"
                   >
                     {message}
                   </div>
@@ -439,15 +986,22 @@ function WalkInBooking() {
                 <button
                   type="submit"
                   className="btn btn-primary"
+                  disabled={
+                    submitting ||
+                    servicesLoading ||
+                    slotsLoading
+                  }
                 >
                   <i className="fas fa-calendar-plus mr-2"></i>
 
-                  Create Walk-In Booking
+                  {submitting
+                    ? "Creating Booking..."
+                    : "Create Walk-In Booking"}
                 </button>
               </form>
             </div>
 
-            {/* Summary */}
+            {/* Booking Summary */}
             <div>
               <div className="receptionist-panel receptionist-booking-summary">
                 <h4 className="mb-4">
@@ -474,9 +1028,10 @@ function WalkInBooking() {
                       </span>
 
                       <strong>
-                        {
-                          selectedService.durationMinutes
-                        }{" "}
+                        {Number(
+                          selectedService.duration_minutes ||
+                            0
+                        )}{" "}
                         minutes
                       </strong>
                     </div>
@@ -488,7 +1043,50 @@ function WalkInBooking() {
 
                       <strong className="text-primary">
                         ₱
-                        {selectedService.price.toLocaleString()}
+                        {Number(
+                          selectedService.price ||
+                            0
+                        ).toLocaleString()}
+                      </strong>
+                    </div>
+
+                    <div className="receptionist-summary-row">
+                      <span>
+                        Date
+                      </span>
+
+                      <strong>
+                        {today}
+                      </strong>
+                    </div>
+
+                    <div className="receptionist-summary-row">
+                      <span>
+                        Time
+                      </span>
+
+                      <strong>
+                        {selectedSlot
+                          ? `${formatTime(
+                              selectedSlot.start
+                            )}${
+                              selectedSlot.end
+                                ? ` – ${formatTime(
+                                    selectedSlot.end
+                                  )}`
+                                : ""
+                            }`
+                          : "Not selected"}
+                      </strong>
+                    </div>
+
+                    <div className="receptionist-summary-row">
+                      <span>
+                        Therapist
+                      </span>
+
+                      <strong>
+                        Auto-assigned
                       </strong>
                     </div>
 
@@ -510,6 +1108,18 @@ function WalkInBooking() {
                       <span className="badge badge-success px-3 py-2">
                         Confirmed
                       </span>
+                    </div>
+
+                    <div className="receptionist-summary-row">
+                      <span>
+                        Check-In
+                      </span>
+
+                      <strong>
+                        {formData.checkInNow
+                          ? "Immediately"
+                          : "Not yet"}
+                      </strong>
                     </div>
                   </>
                 ) : (

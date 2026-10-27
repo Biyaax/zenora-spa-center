@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import therapists from "../data/therapists";
 
 function About() {
   return (
@@ -32,15 +31,12 @@ function About() {
         </div>
       </div>
 
-
       {/* =========================================
           ABOUT ZENORA
       ========================================= */}
       <div className="container-fluid py-5">
         <div className="container py-5">
-
           <div className="row align-items-center">
-
             <div className="col-lg-6 pb-5 pb-lg-0">
               <img
                 className="img-fluid w-100"
@@ -49,9 +45,7 @@ function About() {
               />
             </div>
 
-
             <div className="col-lg-6">
-
               <h6 className="d-inline-block text-primary text-uppercase bg-light py-1 px-2">
                 About Us
               </h6>
@@ -68,17 +62,14 @@ function About() {
               </p>
 
               <p>
-                Guests can explore our available services and packages,
-                learn more about our massage therapists, and conveniently
-                schedule appointments through the Zenora web portal.
+                Guests can explore our available services and packages
+                and conveniently schedule appointments through the
+                Zenora web portal.
               </p>
 
-
               <div className="row pt-3">
-
                 <div className="col-6">
-                  <div className="bg-light text-center p-4">
-
+                  <div className="bg-light text-center p-4 h-100">
                     <h3 className="display-4 text-primary">
                       6
                     </h3>
@@ -86,27 +77,21 @@ function About() {
                     <h6 className="text-uppercase mb-0">
                       Spa Services
                     </h6>
-
                   </div>
                 </div>
 
-
                 <div className="col-6">
-                  <div className="bg-light text-center p-4">
-
+                  <div className="bg-light text-center p-4 h-100">
                     <h3 className="display-4 text-primary">
-                      {therapists.length}
+                      <i className="far fa-calendar-check"></i>
                     </h3>
 
                     <h6 className="text-uppercase mb-0">
-                      Therapists
+                      Online Booking
                     </h6>
-
                   </div>
                 </div>
-
               </div>
-
 
               <Link
                 to="/services"
@@ -121,25 +106,18 @@ function About() {
               >
                 Book Appointment
               </Link>
-
             </div>
-
           </div>
-
         </div>
       </div>
-
 
       {/* =========================================
           WHY ZENORA
       ========================================= */}
       <div className="container-fluid bg-light py-5">
         <div className="container py-5">
-
           <div className="row justify-content-center text-center">
-
             <div className="col-lg-7">
-
               <h6 className="d-inline-block bg-white text-primary text-uppercase py-1 px-2">
                 Why Zenora
               </h6>
@@ -147,18 +125,12 @@ function About() {
               <h1 className="mb-5">
                 Your Wellness Experience Matters
               </h1>
-
             </div>
-
           </div>
 
-
           <div className="row">
-
             <div className="col-lg-4 col-md-6 mb-4">
-
               <div className="bg-white text-center h-100 p-4">
-
                 <i className="fas fa-spa fa-3x text-primary mb-4"></i>
 
                 <h4>
@@ -169,36 +141,27 @@ function About() {
                   Choose from massage, facial, skin care, and other
                   wellness treatments designed for relaxation and comfort.
                 </p>
-
               </div>
-
             </div>
 
-
             <div className="col-lg-4 col-md-6 mb-4">
-
               <div className="bg-white text-center h-100 p-4">
-
                 <i className="fas fa-user-md fa-3x text-primary mb-4"></i>
 
                 <h4>
-                  Professional Therapists
+                  Professional Care
                 </h4>
 
                 <p className="text-muted mb-0">
-                  Browse therapist profiles and select a professional
-                  whose specialties match your preferred treatment.
+                  Receive spa and wellness services from trained staff
+                  assigned according to the selected treatment and
+                  availability.
                 </p>
-
               </div>
-
             </div>
 
-
             <div className="col-lg-4 col-md-6 mb-4">
-
               <div className="bg-white text-center h-100 p-4">
-
                 <i className="far fa-calendar-check fa-3x text-primary mb-4"></i>
 
                 <h4>
@@ -209,123 +172,9 @@ function About() {
                   Registered guests can schedule and manage their
                   appointments conveniently through the Zenora portal.
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
-        </div>
-      </div>
-
-
-      {/* =========================================
-          THERAPISTS
-      ========================================= */}
-      <div className="container-fluid py-5">
-        <div className="container py-5">
-
-          <div className="row justify-content-center text-center">
-
-            <div className="col-lg-7">
-
-              <h6 className="d-inline-block bg-light text-primary text-uppercase py-1 px-2">
-                Our Therapists
-              </h6>
-
-              <h1 className="mb-3">
-                Meet Our Massage Therapists
-              </h1>
-
-              <p className="text-muted mb-5">
-                Get to know the professionals who provide Zenora's
-                spa and wellness treatments.
-              </p>
-
-            </div>
-
-          </div>
-
-
-          <div className="row justify-content-center">
-
-            {therapists.map((therapist) => (
-
-              <div
-                className="col-xl-3 col-lg-3 col-md-6 mb-4"
-                key={therapist.id}
-              >
-
-                <div className="therapist-card home-therapist-card">
-
-                  <img
-                    className="therapist-card-image"
-                    src={therapist.image}
-                    alt={therapist.name}
-                  />
-
-                  <div className="therapist-card-body">
-
-                    <h5 className="text-white mb-1">
-                      {therapist.name}
-                    </h5>
-
-                    <p className="text-primary mb-2">
-                      {therapist.role}
-                    </p>
-
-                    <p className="text-white mb-3">
-                      <strong>Experience:</strong>{" "}
-                      {therapist.experience}
-                    </p>
-
-
-                    <div className="mb-3">
-
-                      {therapist.specialties.map((specialty) => (
-
-                        <span
-                          key={specialty}
-                          className="therapist-specialty"
-                        >
-                          {specialty}
-                        </span>
-
-                      ))}
-
-                    </div>
-
-
-                    <Link
-                      to="/team"
-                      className="btn btn-primary mt-auto"
-                    >
-                      View Profile
-                    </Link>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            ))}
-
-          </div>
-
-
-          <div className="text-center mt-3">
-
-            <Link
-              to="/team"
-              className="btn btn-outline-primary px-4"
-            >
-              View All Therapist Profiles
-            </Link>
-
-          </div>
-
         </div>
       </div>
     </>
