@@ -17,35 +17,46 @@ const findUser = db.prepare(`
 `);
 
 function requireAuth(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [scheme, value] = header.split(" ");
+  const authorization = req.headers.authorization || "";
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization.trim());
+  const payload = match ? token.verify(match[1]) : null;
 
-  const payload = scheme === "Bearer" ? token.verify(value) : null;
+  // The shared auth route signs a numeric subject; accept its numeric-string
+  // equivalent as well to remain compatible with valid staff JWTs.
+  const subject = payload?.sub;
+  const userId =
+    (typeof subject === "number" || typeof subject === "string") &&
+    /^[1-9]\d*$/.test(String(subject))
+      ? Number(subject)
+      : NaN;
 
-  if (!payload) {
+  if (!Number.isSafeInteger(userId)) {
     return next(unauthorized("Your session has expired. Please log in again."));
   }
 
-  // Look the user up on every request so deactivated accounts and
-  // role changes take effect immediately.
-  const user = findUser.get(payload.sub);
-
+  // Recheck the account/role on every request so deactivation or reassignment
+  // takes effect without waiting for the token to expire.
+  const user = findUser.get(userId);
   if (!user || !user.is_active) {
     return next(unauthorized("This account is not active."));
   }
 
   req.user = user;
-  next();
+  return next();
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
+      return next(unauthorized("Authentication required."));
+    }
+    if (!roles.includes(req.user.role)) {
       return next(forbidden());
     }
-
-    next();
+    return next();
   };
 }
 
-module.exports = { requireAuth, requireRole };
+// Some backend-branch routes import `authenticate`; alias it to the shared
+// verifier so there are not two independent authentication implementations.
+module.exports = { requireAuth, authenticate: requireAuth, requireRole };
