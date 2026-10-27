@@ -1,79 +1,62 @@
-
-const jwt = require("jsonwebtoken");
 const db = require("../database/db");
+const token = require("../lib/token");
+const { unauthorized, forbidden } = require("../lib/errors");
 
-function authenticate(req, res, next) {
+const findUser = db.prepare(`
+  SELECT
+    u.id,
+    u.first_name,
+    u.last_name,
+    u.email,
+    u.phone,
+    u.is_active,
+    r.name AS role
+  FROM users u
+  JOIN roles r ON r.id = u.role_id
+  WHERE u.id = ?
+`);
+
+function requireAuth(req, res, next) {
   const authorization = req.headers.authorization || "";
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization.trim());
+  const payload = match ? token.verify(match[1]) : null;
 
-  const match = /^Bearer (.+)$/i.exec(authorization);
+  // The shared auth route signs a numeric subject; accept its numeric-string
+  // equivalent as well to remain compatible with valid staff JWTs.
+  const subject = payload?.sub;
+  const userId =
+    (typeof subject === "number" || typeof subject === "string") &&
+    /^[1-9]\d*$/.test(String(subject))
+      ? Number(subject)
+      : NaN;
 
-  if (!match) {
-    return res.status(401).json({
-      success: false,
-      message: "Authentication required.",
-    });
+  if (!Number.isSafeInteger(userId)) {
+    return next(unauthorized("Your session has expired. Please log in again."));
   }
 
-  if (!process.env.JWT_SECRET) {
-    return res.status(500).json({
-      success: false,
-      message: "Authentication is not configured.",
-    });
+  // Recheck the account/role on every request so deactivation or reassignment
+  // takes effect without waiting for the token to expire.
+  const user = findUser.get(userId);
+  if (!user || !user.is_active) {
+    return next(unauthorized("This account is not active."));
   }
 
-  try {
-    const payload = jwt.verify(match[1], process.env.JWT_SECRET, {
-      algorithms: ["HS256"],
-    });
-
-    if (!payload || typeof payload.sub !== "string" ||
-        !/^[1-9]\d*$/.test(payload.sub)) {
-      throw new Error("Invalid token subject");
-    }
-
-    const user = db.prepare(`
-      SELECT u.id, u.first_name, u.last_name,
-             u.email, u.is_active, r.name AS role
-      FROM users u
-      JOIN roles r ON r.id = u.role_id
-      WHERE u.id = ?
-    `).get(Number(payload.sub));
-
-    if (!user || user.is_active !== 1) {
-      return res.status(401).json({
-        success: false,
-        message: "Account unavailable.",
-      });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired token.",
-    });
-  }
+  req.user = user;
+  return next();
 }
 
-function requireRole(role) {
+function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required.",
-      });
+      return next(unauthorized("Authentication required."));
     }
-
-    if (req.user.role.toLowerCase() !== role.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied.",
-      });
+    if (!roles.includes(req.user.role)) {
+      return next(forbidden());
     }
-
-    next();
+    return next();
   };
 }
 
-module.exports = { authenticate, requireRole };
+// Some backend-branch routes import `authenticate`; alias it to the shared
+// verifier so there are not two independent authentication implementations.
+module.exports = { requireAuth, authenticate: requireAuth, requireRole };
