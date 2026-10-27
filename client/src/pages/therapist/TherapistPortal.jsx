@@ -1,411 +1,446 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import TherapistSidebar from "../../components/TherapistSidebar";
+import {
+  localDate, shiftDay, weekDays, weekdayForDate, dateFromLocal, dateTimeMs,
+  formatDate, formatTime, formatDateTime, formatElapsed, formatCountdown,
+  STATUSES, WEEKDAYS, demoStaff, createAppointments, createAvailability,
+  createTimeOff, createNotifications, createHistory
+} from "./therapistDemoData";
 
-// FRONTEND SAMPLE ONLY. Do not use these records for real client or reporting data.
-// Replace with authenticated, therapist-scoped API responses during backend integration.
-const dateOffset = (days = 0) => {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
-  date.setDate(date.getDate() + days);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const TITLES = {
+  dashboard: ["Good day!", "Here's your appointments and session activity for today."],
+  schedule: ["My Schedule", "View your assigned shifts and appointments in a calendar."],
+  appointments: ["My Appointments", "Manage your assigned sessions and view your status history."],
+  availability: ["Availability & Time-Off", "Manage regular working hours and request time off."],
+  profile: ["My Profile", "Review your therapist information and account settings."]
 };
-const sampleAppointments = [
-  { id: "APT-1001", date: dateOffset(0), time: "09:00", client: "Bea Mendoza", phone: "0917 000 0001", service: "Body Massage", duration: 60, status: "Confirmed", request: "Prefers gentle pressure", notes: "" },
-  { id: "APT-1003", date: dateOffset(0), time: "14:00", client: "Carla Gomez", phone: "0917 000 0003", service: "Stone Therapy", duration: 75, status: "Checked In", request: "Avoid shoulder area", notes: "" },
-  { id: "APT-1007", date: dateOffset(1), time: "11:00", client: "Nina Torres", phone: "0917 000 0007", service: "Aromatherapy", duration: 60, status: "Confirmed", request: "Lavender oil preferred", notes: "" },
-  { id: "APT-1008", date: dateOffset(2), time: "15:30", client: "Paolo Reyes", phone: "0917 000 0008", service: "Swedish Massage", duration: 60, status: "Confirmed", request: "None", notes: "" },
-  { id: "APT-1009", date: dateOffset(-1), time: "16:00", client: "Mia Ramos", phone: "0917 000 0009", service: "Body Massage", duration: 60, status: "Completed", request: "Focus on back and shoulders", notes: "" },
-  { id: "APT-1010", date: dateOffset(-1), time: "10:00", client: "Leo Tan", phone: "0917 000 0010", service: "Facial Therapy", duration: 45, status: "No-Show", request: "None", notes: "" },
-  { id: "APT-1011", date: dateOffset(-1), time: "08:30", client: "Ria Cruz", phone: "0917 000 0011", service: "Foot Massage", duration: 30, status: "Confirmed", request: "Gentle pressure", notes: "" },
-];
-const pages = {
-  dashboard: ["Dashboard", "Your personal workday overview"],
-  schedule: ["My Schedule", "Review your daily and weekly appointments"],
-  appointments: ["My Appointments", "Review clients, manage session statuses, and see your session history"],
-  availability: ["Availability & Time-Off", "Manage your available days and submit time-off requests"],
+const STATUS_ICONS = {
+  "Confirmed": "far fa-calendar-check", "Checked In": "fas fa-user-check", "Ongoing": "fas fa-play-circle", "Completed": "fas fa-check-circle", "No-Show": "far fa-calendar-times"
 };
-const statuses = ["All", "Confirmed", "Checked In", "Ongoing", "Completed", "No-Show"];
-const formatDate = (value) => new Date(`${value}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
-const formatTime = (value) => new Date(`2026-01-01T${value}:00`).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
-const formatTimestamp = (value) => new Date(value).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const weekOf = (dateString) => {
-  const start = new Date(`${dateString}T00:00:00`);
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  const local = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return [local(start), local(end)];
-};
-const scheduledEndPassed = (a) => new Date(`${a.date}T${a.time}:00`).getTime() + a.duration * 60000 <= Date.now();
-
-function Badge({ status }) {
-  return <span className={`therapist-badge badge-${status.toLowerCase().replace(/\s+/g, "-")}`}>{status}</span>;
+const newNotes = () => ({ areas: "", pressure: "Medium", observations: "", recommendations: "" });
+function Status({ value }) { return <span className={`therapist-badge therapist-badge-${value.toLowerCase().replaceAll(" ", "-")}`}>{value}</span>; }
+function Btn({ children, variant="primary", className="", ...props }) {
+  return <button type="button" className={`therapist-btn ${variant} ${className}`} {...props}>{children}</button>;
+}
+function Icon({name}) { return <i className={name} aria-hidden="true" />; }
+function NoteReadout({ notes }) {
+  if (!notes) return <p className="therapist-muted">No service notes recorded.</p>;
+  return <div className="therapist-detail-pairs">
+    <div><span>Areas worked</span><strong>{notes.areas}</strong></div>
+    <div><span>Pressure used</span><strong>{notes.pressure}</strong></div>
+    <div><span>Observations</span><p>{notes.observations}</p></div>
+    <div><span>Recommendations</span><p>{notes.recommendations}</p></div>
+  </div>;
+}
+function Dialog({ title, onClose, children, wide=false, description }) {
+  const titleId = useId();
+  const descId = useId();
+  const elRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const priorFocusRef = useRef(null);
+  useEffect(() => {
+    priorFocusRef.current = document.activeElement;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const dialog = elRef.current;
+    dialog?.querySelector("[data-autofocus],input:not([disabled]),textarea:not([disabled]),button:not([disabled])")?.focus();
+    const onKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); closeRef.current(); }
+      if (e.key !== "Tab" || !dialog) return;
+      const elements = [...dialog.querySelectorAll("button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]")];
+      if (!elements.length) return;
+      const first = elements[0], last = elements[elements.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = originalOverflow; document.removeEventListener("keydown", onKey); priorFocusRef.current?.focus?.(); };
+  }, []);
+  return createPortal(<div className="therapist-modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <section ref={elRef} className={`therapist-modal ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descId : undefined}>
+      <div className="therapist-modal-heading"><div><h2 id={titleId}>{title}</h2>{description && <p id={descId}>{description}</p>}</div><button type="button" className="therapist-icon-btn" aria-label="Close dialog" onClick={onClose}><Icon name="fas fa-times" /></button></div>
+      {children}
+    </section>
+  </div>, document.body);
 }
 
-// One compact action menu per appointment. Render the popover in a portal so
-// the responsive horizontally scrolling table does not clip the dropdown.
-function AppointmentActions({ appointment, onViewDetails, onRequestStatus, onEditNotes, allowStatusChanges }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-  const menuId = `therapist-actions-${appointment.id}`;
-
-  const options = [
-    { label: "View details", icon: "far fa-eye", action: () => onViewDetails(appointment) },
-  ];
-  if (allowStatusChanges) {
-    if (appointment.status === "Checked In") {
-      options.push({ label: "Start session", icon: "fas fa-play", action: () => onRequestStatus(appointment, "Ongoing") });
-    } else if (appointment.status === "Ongoing") {
-      options.push({ label: "Complete session", icon: "far fa-check-circle", action: () => onRequestStatus(appointment, "Completed") });
-    } else if (appointment.status === "Confirmed" && scheduledEndPassed(appointment)) {
-      options.push({ label: "Mark No-Show", icon: "far fa-calendar-times", action: () => onRequestStatus(appointment, "No-Show") });
-    } else if (appointment.status === "Completed") {
-      options.push({ label: "Edit notes", icon: "far fa-edit", action: () => onEditNotes(appointment) });
-    }
-  }
-
-  const openMenu = () => {
-    if (isOpen) { setIsOpen(false); return; }
-    const rect = triggerRef.current.getBoundingClientRect();
-    // Keep the menu on screen even near the table's right or lower edge.
-    const menuWidth = 188;
-    const approximateHeight = 12 + options.length * 42;
-    const placeAbove = window.innerHeight - rect.bottom < approximateHeight + 12 && rect.top > approximateHeight + 12;
-    setPosition({
-      top: placeAbove ? rect.top - approximateHeight - 6 : rect.bottom + 6,
-      left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
-    });
-    setIsOpen(true);
+// Uses a document-level menu to avoid clipping inside a scrolling table.
+function Actions({ appt, onDetails, onChange, onEdit }) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef(null), menuRef = useRef(null);
+  const [position, setPosition] = useState({left:0,top:0});
+  const items = [{ label:"View details", icon:"far fa-eye", action:()=>onDetails(appt) }];
+  if (appt.status === "Checked In") items.push({label:"Start Session", icon:"fas fa-play", action:()=>onChange(appt,"Ongoing")});
+  if (appt.status === "Ongoing") items.push({label:"End Session", icon:"fas fa-stop-circle", action:()=>onChange(appt,"Completed")});
+  if (["Confirmed","Checked In"].includes(appt.status)) items.push({label:"Mark No-Show", icon:"far fa-calendar-times", action:()=>onChange(appt,"No-Show")});
+  if (appt.status === "Completed") items.push({label:"Edit service notes", icon:"far fa-edit", action:()=>onEdit(appt)});
+  const toggle = () => {
+    if (open) return setOpen(false);
+    const rect = buttonRef.current.getBoundingClientRect();
+    const height = 12 + items.length * 40;
+    const above = window.innerHeight - rect.bottom < height + 12 && rect.top > height;
+    setPosition({top:above ? rect.top - height - 5 : rect.bottom + 5, left:Math.max(8, Math.min(rect.right - 198, window.innerWidth - 206))});
+    setOpen(true);
   };
-
   useEffect(() => {
-    if (!isOpen) return;
-    function onPointerDown(event) {
-      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setIsOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === "Escape") { setIsOpen(false); triggerRef.current?.focus(); }
-    }
-    function onViewportChange() { setIsOpen(false); }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", onViewportChange);
-    window.addEventListener("scroll", onViewportChange, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onViewportChange);
-      window.removeEventListener("scroll", onViewportChange, true);
-    };
-  }, [isOpen]);
-
+    if (!open) return;
+    const pointer = e => { if (!buttonRef.current?.contains(e.target) && !menuRef.current?.contains(e.target)) setOpen(false); };
+    const esc = e => { if (e.key === "Escape") { setOpen(false); buttonRef.current?.focus(); } };
+    const close = () => setOpen(false);
+    document.addEventListener("pointerdown", pointer); document.addEventListener("keydown", esc);
+    window.addEventListener("resize", close); window.addEventListener("scroll", close, true);
+    return () => {document.removeEventListener("pointerdown", pointer);document.removeEventListener("keydown", esc);window.removeEventListener("resize", close);window.removeEventListener("scroll", close, true);};
+  },[open]);
   return <>
-    <button type="button" ref={triggerRef} className="therapist-actions-trigger"
-      aria-haspopup="menu" aria-expanded={isOpen} aria-controls={isOpen ? menuId : undefined}
-      aria-label={`Actions for ${appointment.client}, ${appointment.id}`}
-      onClick={openMenu}>
-      Actions <i className="fas fa-chevron-down" aria-hidden="true" />
-    </button>
-    {isOpen && createPortal(
-      <div id={menuId} ref={menuRef} role="menu" aria-label={`Actions for ${appointment.id}`}
-        className="therapist-actions-popover" style={{ top: position.top, left: position.left }}>
-        {options.map((option, index) => <button key={option.label} type="button" role="menuitem"
-          className={`therapist-actions-item ${index === 1 ? "therapist-actions-item-separated" : ""}`}
-          onClick={() => { setIsOpen(false); option.action(); }}>
-          <i className={option.icon} aria-hidden="true" /> {option.label}
-        </button>)}
-      </div>, document.body)
-    }
+    <Btn variant="outline" className="therapist-action-trigger" ref={buttonRef} aria-label={`Actions for ${appt.client}`} aria-expanded={open} aria-haspopup="menu" onClick={toggle}>Actions <Icon name="fas fa-chevron-down" /></Btn>
+    {open && createPortal(<div ref={menuRef} role="menu" aria-label={`${appt.id} actions`} className="therapist-actions-popover" style={position}>
+      {items.map(item => <button key={item.label} role="menuitem" type="button" onClick={() => {setOpen(false);item.action();}}><Icon name={item.icon}/>{item.label}</button>)}
+    </div>,document.body)}
   </>;
 }
-
-function AppointmentTable({ rows, onRequestStatus, onEditNotes, onViewDetails, allowActions = false }) {
-  if (!rows.length) return <div className="therapist-empty">No appointments match these filters. Choose All Dates or another status to view more sessions.</div>;
-  return <div className="therapist-table-wrap">
-    <table className="therapist-table">
-      <thead><tr><th>Booking ID</th><th>Date / Time</th><th>Client</th><th>Service</th><th>Special Request</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>{rows.map(a => <tr key={a.id}>
-        <td><strong>{a.id}</strong></td>
-        <td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td>
-        <td><strong>{a.client}</strong></td>
-        <td>{a.service}<small>{a.duration} min</small></td>
-        <td>{a.request || "None"}</td>
-        <td><Badge status={a.status} /></td>
-        <td>
-          <AppointmentActions appointment={a} onViewDetails={onViewDetails}
-            onRequestStatus={onRequestStatus} onEditNotes={onEditNotes} allowStatusChanges={allowActions} />
-        </td>
-      </tr>)}</tbody>
-    </table>
+function AppointmentsTable({rows, onDetails, onChange, onEdit, actions=true}) {
+  if (!rows.length) return <div className="therapist-empty"><Icon name="far fa-calendar-times" /><h4>No appointments found</h4><p>Try another date or filter. Only your assigned appointments appear here.</p></div>;
+  return <div className="therapist-table-wrap"><table className="therapist-table"><thead><tr><th>Booking ID</th><th>Date & Time</th><th>Client</th><th>Service</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    {rows.map(a => <tr key={a.id}><td><strong>{a.id}</strong></td><td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td><td><strong>{a.client}</strong><small>{a.specialRequest || "No special request"}</small></td><td>{a.service}<small>{a.duration} minutes</small></td><td><Status value={a.status}/>{a.status === "Ongoing" && <Elapsed startedAt={a.startedAt}/>}</td><td>{actions ? <Actions appt={a} onDetails={onDetails} onChange={onChange} onEdit={onEdit}/> : <Btn variant="outline" onClick={()=>onDetails(a)}>View details</Btn>}</td></tr>)}
+  </tbody></table></div>;
+}
+function Elapsed({startedAt}) {
+  const [tick,setTick] = useState(Date.now());
+  useEffect(()=>{const id=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(id);},[]);
+  return <span className="therapist-timer" aria-label="Session elapsed time"><Icon name="far fa-clock"/> {formatElapsed(tick - new Date(startedAt || tick).getTime())}</span>;
+}
+function NotesFields({notes,setNotes}) {
+  return <div className="therapist-note-fields">
+    <label htmlFor="therapist-notes-areas">Areas worked <span>*</span><input id="therapist-notes-areas" autoFocus required maxLength={180} value={notes.areas} onChange={e=>setNotes(n=>({...n,areas:e.target.value}))} placeholder="e.g. Back and shoulders"/></label>
+    <label htmlFor="therapist-notes-pressure">Pressure used <span>*</span><select id="therapist-notes-pressure" value={notes.pressure} required onChange={e=>setNotes(n=>({...n,pressure:e.target.value}))}><option>Light</option><option>Medium</option><option>Firm</option><option>Varied</option></select></label>
+    <label htmlFor="therapist-notes-observations">Observations <span>*</span><textarea id="therapist-notes-observations" rows={3} required maxLength={1000} value={notes.observations} onChange={e=>setNotes(n=>({...n,observations:e.target.value}))} placeholder="Note session observations without adding an unverified diagnosis."/></label>
+    <label htmlFor="therapist-notes-recommendations">Recommendations <span>*</span><textarea id="therapist-notes-recommendations" rows={3} required maxLength={1000} value={notes.recommendations} onChange={e=>setNotes(n=>({...n,recommendations:e.target.value}))} placeholder="e.g. Hydrate and use gentle stretches."/></label>
   </div>;
 }
-
-// Read-only appointment information; editing stays exclusively in Actions > Edit notes.
-function AppointmentDetailsDialog({ appointment, onClose }) {
-  const closeRef = useRef(null);
-  useEffect(() => { closeRef.current?.focus(); }, []);
-  if (!appointment) return null;
-  return <div className="therapist-dialog-backdrop" role="presentation"
-    onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="therapist-details-title"
-      className="therapist-dialog therapist-details-dialog">
-      <div className="therapist-details-heading">
-        <div><p className="therapist-details-eyebrow">{appointment.id}</p><h3 id="therapist-details-title">Appointment Details</h3></div>
-        <button type="button" className="therapist-details-close" aria-label="Close appointment details" onClick={onClose}>×</button>
-      </div>
-      <div className="therapist-details-grid">
-        <div><span>Client</span><strong>{appointment.client}</strong></div>
-        <div><span>Contact Number</span><strong>{appointment.phone || "—"}</strong></div>
-        <div><span>Service</span><strong>{appointment.service}</strong></div>
-        <div><span>Duration</span><strong>{appointment.duration} minutes</strong></div>
-        <div><span>Date</span><strong>{formatDate(appointment.date)}</strong></div>
-        <div><span>Time</span><strong>{formatTime(appointment.time)}</strong></div>
-        <div className="therapist-details-full"><span>Status</span><Badge status={appointment.status} /></div>
-        <div className="therapist-details-full"><span>Special Request</span><p>{appointment.request || "None"}</p></div>
-        {appointment.status === "Completed" && <div className="therapist-details-full therapist-notes-readonly">
-          <span>Service Notes</span><p>{appointment.notes.trim() || "No service notes recorded yet."}</p>
-        </div>}
-      </div>
-      <div className="therapist-dialog-actions"><button ref={closeRef} type="button" className="therapist-btn primary" onClick={onClose}>Close</button></div>
-    </section>
-  </div>;
+function ModalContent({modal, appointment, notes, setNotes, onConfirm, onClose}) {
+  if (!modal) return null;
+  if (modal.type === "details" && appointment) return <Dialog onClose={onClose} title="Appointment Details" description={appointment.id} wide>
+    <div className="therapist-detail-pairs">
+      {[ ["Booking ID",appointment.id], ["Client name",appointment.client], ["Service",appointment.service], ["Duration",`${appointment.duration} minutes`], ["Date",formatDate(appointment.date)], ["Time",formatTime(appointment.time)], ["Status",<Status value={appointment.status}/>], ["Special request",appointment.specialRequest || "None"] ].map(([k,v])=><div key={k}><span>{k}</span><strong>{v}</strong></div>)}
+      {appointment.phone && <div><span>Contact number</span><strong>{appointment.phone}</strong></div>}
+      {appointment.allergies && <div><span>Allergies / health notes</span><strong>{appointment.allergies}</strong></div>}
+    </div>
+    {appointment.notes && <div className="therapist-notes-summary"><h3>Recorded service notes</h3><NoteReadout notes={appointment.notes}/></div>}
+    <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Close</Btn></div>
+  </Dialog>;
+  if (["end","editNotes"].includes(modal.type) && appointment) {
+    const complete = modal.type === "end";
+    const valid = [notes.areas,notes.pressure,notes.observations,notes.recommendations].every(v=>String(v).trim());
+    return <Dialog onClose={onClose} wide title={complete ? "End Session & Record Notes" : "Edit Service Notes"} description={`${appointment.client} · ${appointment.service} · ${appointment.id}`}>
+      {complete && <div className="therapist-callout">The appointment will be marked <strong>Completed</strong> only after you submit these required notes.</div>}
+      <form onSubmit={e=>{e.preventDefault();if(valid)onConfirm();}}><NotesFields notes={notes} setNotes={setNotes}/>
+        <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Cancel</Btn><button type="submit" className="therapist-btn primary" disabled={!valid}>{complete ? "Complete Session" : "Save Notes"}</button></div>
+      </form>
+    </Dialog>;
+  }
+  if (modal.type === "noShow" && appointment) return <Dialog title="Mark as No-Show?" onClose={onClose} description={`Appointment ${appointment.id} · ${appointment.client}`}>
+    <p className="therapist-dialog-text">Confirm that the client did not attend the scheduled session. This action will change the status to <strong>No-Show</strong>.</p>
+    <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Cancel</Btn><Btn variant="danger" onClick={onConfirm}>Confirm No-Show</Btn></div>
+  </Dialog>;
+  if (modal.type === "start" && appointment) return <Dialog title="Start Session?" description={`${appointment.client} · ${appointment.id}`} onClose={onClose}>
+    <p className="therapist-dialog-text">Only clients already checked in by Receptionist can start a session. Start the live session timer now?</p>
+    <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Cancel</Btn><Btn onClick={onConfirm}>Start Session</Btn></div>
+  </Dialog>;
+  if (modal.type === "cancelTimeOff") return <Dialog title="Cancel time-off request?" onClose={onClose} description={`Request for ${formatDate(modal.date)}`}>
+    <p className="therapist-dialog-text">Only Pending requests can be cancelled. This change is only stored in the frontend demo.</p>
+    <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Keep request</Btn><Btn variant="danger" onClick={onConfirm}>Cancel request</Btn></div>
+  </Dialog>;
+  if (modal.type === "requestConflict") return <Dialog title="Appointments already assigned" onClose={onClose} description={formatDate(modal.date)}>
+    <p className="therapist-dialog-text">You have {modal.count} assigned appointment(s) on this date. Sending a time-off request does not cancel or reassign them; the Spa Manager must review the conflict.</p>
+    <div className="therapist-modal-actions"><Btn variant="neutral" onClick={onClose}>Go back</Btn><Btn onClick={onConfirm}>Submit anyway</Btn></div>
+  </Dialog>;
+  return null;
 }
-
-function ConfirmDialog({ pending, onConfirm, onCancel, onNoteChange, cancelRef }) {
-  if (!pending) return null;
-  const title = pending.kind === "completeWithNotes" ? "Complete session and record notes"
-    : pending.kind === "undo" ? "Undo the last status change?"
-    : pending.kind === "status" ? `Confirm ${pending.next} status?`
-    : pending.kind === "editNote" ? "Edit service notes"
-    : pending.kind === "availability" ? "Save regular availability?"
-    : "Submit time-off request?";
-  const details = pending.kind === "completeWithNotes"
-    ? `Confirm that ${pending.appointment.client}'s ${pending.appointment.service} session (${pending.appointment.id}) is finished. Record the service notes before completing the session.`
-    : pending.kind === "status"
-    ? `${pending.appointment.client} (${pending.appointment.id}) will change from ${pending.appointment.status} to ${pending.next}.`
-    : pending.kind === "undo" ? `${pending.action.id} will return from ${pending.action.next} to ${pending.action.previous}.`
-    : pending.kind === "editNote" ? `Review and update the service notes for ${pending.appointment.client} (${pending.appointment.id}).`
-    : pending.kind === "timeOff" ? `Add a time-off request for ${formatDate(pending.date)}?`
-    : "Update your selected regular working days?";
-  return <div className="therapist-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
-    <section role="alertdialog" aria-modal="true" aria-labelledby="therapist-dialog-title" aria-describedby="therapist-dialog-description" className="therapist-dialog">
-      <div className="therapist-dialog-heading"><span className="therapist-dialog-icon"><i className="fas fa-question" aria-hidden="true" /></span><h3 id="therapist-dialog-title">{title}</h3></div>
-      <p id="therapist-dialog-description">{details}</p>
-      {pending.kind === "status" && pending.next === "No-Show" && <p className="therapist-warning">A no-show should only be recorded after the scheduled session has elapsed and attendance has been verified.</p>}
-      {(pending.kind === "completeWithNotes" || pending.kind === "editNote") && <div className="therapist-completion-form">
-        <label htmlFor="therapist-session-note-input">Service notes <span aria-hidden="true">*</span></label>
-        <textarea id="therapist-session-note-input" rows="5" required autoFocus maxLength={2000}
-          value={pending.note || ""}
-          onChange={event => onNoteChange(event.target.value)}
-          placeholder="Briefly document the service provided and relevant session observations." />
-        <small>{pending.kind === "completeWithNotes"
-          ? "Required to complete the session. You can review this note in View details, or edit it from the appointment Actions menu."
-          : "Updated notes will appear in View details."}</small>
-      </div>}
-      <div className="therapist-dialog-actions">
-        <button type="button" className="therapist-btn neutral" ref={cancelRef} onClick={onCancel}>Cancel</button>
-        <button type="button" className="therapist-btn primary" onClick={onConfirm} disabled={["completeWithNotes", "editNote"].includes(pending.kind) && !(pending.note || "").trim()}>{pending.kind === "completeWithNotes" ? "Complete Session" : pending.kind === "editNote" ? "Save Changes" : "Confirm"}</button>
-      </div>
-    </section>
-  </div>;
-}
-
-export default function TherapistPortal() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  // Show the authenticated therapist's name when staff login is integrated.
-  // Current AuthContext handles Guest users, so never display a Guest identity as a therapist.
-  const role = String(user?.role ?? "").replace(/[_-]/g, " ").trim().toLowerCase();
-  const isTherapistAccount = ["therapist", "massage therapist"].includes(role);
-  const signedInName = isTherapistAccount
-    ? String(user?.fullName || user?.name || [user?.firstName, user?.lastName].filter(Boolean).join(" ")).trim()
-    : "";
-  const therapistName = signedInName || "Therapist Name";
-  const therapistInitial = signedInName ? signedInName.charAt(0).toUpperCase() : "T";
-  const accountMenuRef = useRef(null);
-  const cancelRef = useRef(null);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const section = location.pathname.split("/")[2] || "dashboard";
-  const current = pages[section] ? section : "dashboard";
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [appointments, setAppointments] = useState(sampleAppointments);
-  const [selectedDate, setSelectedDate] = useState(dateOffset(0));
-  const [view, setView] = useState("daily");
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [appointmentTab, setAppointmentTab] = useState("list");
-  const [history, setHistory] = useState([]);
-  const [lastAction, setLastAction] = useState(null);
-  const [pending, setPending] = useState(null);
-  const [detailsId, setDetailsId] = useState(null);
-  const [notice, setNotice] = useState({ page: "", message: "" });
-  const [availableDays, setAvailableDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
-  const [timeOff, setTimeOff] = useState([]);
-  const [offDate, setOffDate] = useState("");
-  const [offReason, setOffReason] = useState("");
-
-  useEffect(() => {
-    function onOutside(event) {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) setAccountOpen(false);
-    }
-    function onKey(event) {
-      if (event.key === "Escape") { setAccountOpen(false); setPending(null); setDetailsId(null); }
-    }
-    document.addEventListener("pointerdown", onOutside);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("pointerdown", onOutside); document.removeEventListener("keydown", onKey); };
-  }, []);
-  useEffect(() => { if (pending && !["completeWithNotes", "editNote"].includes(pending.kind)) cancelRef.current?.focus(); }, [pending]);
-
-  const showNotice = (message) => setNotice({ page: current, message });
-  const handleLogout = () => {
-    // Frontend-only: backend teammates must replace with authenticated staff logout/session invalidation.
-    logout(); setAccountOpen(false); navigate("/", { replace: true });
+const CAL_START=8, CAL_END=20, SLOTS=(CAL_END-CAL_START)*2;
+const toMinutes = hhmm => {const [h,m]=hhmm.split(":").map(Number);return h*60+m;};
+function calendarSlot(hhmm) {return Math.max(0,Math.min(SLOTS,Math.floor((toMinutes(hhmm)-CAL_START*60)/30)));}
+function isApprovedTimeOff(date,requests) {return requests.some(r=>r.date===date && r.status==="Approved");}
+function isTentativeTimeOff(date,requests) {return requests.some(r=>r.date===date && r.status==="Pending");}
+function Calendar({days,appointments,availability,requests,onDetails}) {
+  const isWeek=days.length===7;
+  const active = appointments.filter(a => days.includes(a.date));
+  const blockFor = date => {
+    const shift=availability[weekdayForDate(date)];
+    if (!shift?.enabled) return {label:"Non-working day", type:"off"};
+    if (isApprovedTimeOff(date,requests)) return {label:"Approved time off",type:"off"};
+    if (isTentativeTimeOff(date,requests)) return {label:"Pending time off",type:"pending"};
+    return null;
   };
-  const [weekStart, weekEnd] = weekOf(selectedDate);
-  const visibleRows = useMemo(() => appointments.filter(a => {
-    const dateMatch = view === "all" || (view === "daily" ? a.date === selectedDate : a.date >= weekStart && a.date <= weekEnd);
-    const matchText = `${a.id} ${a.client} ${a.service} ${a.status}`.toLowerCase().includes(query.trim().toLowerCase());
-    return dateMatch && matchText && (statusFilter === "All" || a.status === statusFilter);
-  }).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)), [appointments, selectedDate, weekStart, weekEnd, query, view, statusFilter]);
-  const todayRows = appointments.filter(a => a.date === dateOffset(0));
-  const byStatus = (status) => appointments.filter(a => a.status === status).length;
-  const selectStatus = (status) => { setStatusFilter(status); if (status !== "All") setView("all"); };
-
-  const confirmPending = () => {
-    if (!pending) return;
-    if (pending.kind === "completeWithNotes") {
-      const { appointment } = pending;
-      const latest = appointments.find(a => a.id === appointment.id);
-      const text = (pending.note || "").trim();
-      if (!latest || latest.status !== "Ongoing") {
-        showNotice("This appointment has changed. Review its status before completing it.");
-      } else if (!text) {
-        showNotice("Enter a service note before completing the session.");
-        return;
-      } else {
-        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: "Completed", notes: text } : a));
-        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: "Ongoing", next: "Completed", action: "Session completed · notes recorded", at: new Date().toISOString() }, ...prev]);
-        // A completed session containing notes must not be silently undone.
-        setLastAction(null);
-        showNotice(`${appointment.id} marked Completed with service notes (sample data only).`);
-      }
-    } else if (pending.kind === "status") {
-      const { appointment, next } = pending;
-      const latest = appointments.find(a => a.id === appointment.id);
-      if (!latest || latest.status !== appointment.status) {
-        showNotice("This appointment has changed. Please review it before trying again.");
-      } else if (next === "No-Show" && !scheduledEndPassed(latest)) {
-        showNotice("The scheduled session has not ended. No-Show is not available yet.");
-      } else {
-        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: next } : a));
-        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: appointment.status, next, action: "Changed", at: new Date().toISOString() }, ...prev]);
-        setLastAction({ id: appointment.id, previous: appointment.status, next });
-        showNotice(`${appointment.id} updated to ${next}. This is a local sample change.`);
-      }
-    } else if (pending.kind === "undo") {
-      const action = pending.action;
-      const latest = appointments.find(a => a.id === action.id);
-      if (!latest || latest.status !== action.next) {
-        showNotice("Undo is no longer available for this appointment.");
-      } else if (action.next === "Completed" && latest.notes.trim()) {
-        showNotice("Status correction needs review because service notes are already recorded.");
-      } else {
-        setAppointments(prev => prev.map(a => a.id === action.id ? { ...a, status: action.previous } : a));
-        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: action.id, client: latest.client, previous: action.next, next: action.previous, action: "Undid change", at: new Date().toISOString() }, ...prev]);
-        showNotice(`${action.id} restored to ${action.previous}. The correction is recorded in this page's history.`);
-      }
-      setLastAction(null);
-    } else if (pending.kind === "editNote") {
-      const { appointment } = pending;
-      const latest = appointments.find(a => a.id === appointment.id);
-      const text = (pending.note || "").trim();
-      if (!latest || latest.status !== "Completed") {
-        showNotice("Only completed appointments can have their service notes edited.");
-      } else if (!text) {
-        showNotice("Enter a service note before saving.");
-        return;
-      } else if (text !== latest.notes) {
-        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, notes: text } : a));
-        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: "—", next: "Notes updated", action: latest.notes ? "Service note edited" : "Service note added", at: new Date().toISOString() }, ...prev]);
-        setLastAction(prev => prev?.id === appointment.id ? null : prev);
-        showNotice(`Service notes for ${appointment.id} updated (sample data only).`);
-      }
-    } else if (pending.kind === "availability") {
-      showNotice("Availability updated for this session only.");
-    } else if (pending.kind === "timeOff") {
-      setTimeOff(prev => [...prev, { id: Date.now(), date: pending.date, reason: pending.reason, status: "Pending" }]);
-      setOffDate(""); setOffReason("");
-      showNotice("Time-off request added to your sample list; it has not been sent to a manager.");
-    }
-    setPending(null);
-  };
-
-  // Keep old bookmarked /therapist/notes URLs from rendering a blank page.
-  // App.jsx can remove the old route after teammates merge these UI changes.
-  if (section === "notes") return <Navigate to="/therapist/appointments" replace />;
-
-  return <div className="therapist-layout">
-    <TherapistSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
-    <main className="therapist-main">
-      <header className="therapist-topbar">
-        <div className="therapist-heading"><button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><i className="fas fa-bars" /></button></div>
-        <div className="therapist-user">
-          <div className="therapist-user-menu-wrap" ref={accountMenuRef}>
-            <button type="button" className="therapist-account-trigger" aria-expanded={accountOpen} aria-haspopup="true" aria-controls="therapist-account-options" onClick={() => setAccountOpen(open => !open)}>
-              <span className="therapist-avatar" aria-hidden="true">{therapistInitial}</span><span className="therapist-user-text"><strong>{therapistName}</strong><small>Massage Therapist</small></span><i className={`fas fa-chevron-${accountOpen ? "up" : "down"} therapist-account-caret`} aria-hidden="true" />
-            </button>
-            {accountOpen && <div id="therapist-account-options" className="therapist-account-menu therapist-account-menu-compact" role="menu" aria-label="Therapist account options">
-              <button type="button" role="menuitem" className="therapist-account-link therapist-account-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt" aria-hidden="true" />Logout</button>
-            </div>}
-          </div>
-        </div>
-      </header>
-      <div className="therapist-content">
-        <div className="therapist-intro"><h1>{current === "dashboard" ? "Good day!" : pages[current][0]}</h1><p>{pages[current][1]}</p></div>
-        {notice.page === current && notice.message && <div className="therapist-notice" role="status">{notice.message}<button type="button" onClick={() => setNotice({ page: "", message: "" })} aria-label="Dismiss notification">×</button></div>}
-
-        {current === "dashboard" && <>
-          <div className="therapist-stats">
-            {[["Today's Sessions", todayRows.length, "far fa-calendar-alt"], ["Ready to Start", todayRows.filter(a => a.status === "Checked In").length, "far fa-clock"], ["Ongoing", todayRows.filter(a => a.status === "Ongoing").length, "fas fa-spa"], ["Completed", todayRows.filter(a => a.status === "Completed").length, "fas fa-check-circle"]].map(([label, value, icon]) => <div className="therapist-stat" key={label}><div><p>{label}</p><h2>{value}</h2></div><span><i className={icon} /></span></div>)}
-          </div>
-          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} onViewDetails={a => setDetailsId(a.id)} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} /></div>
-          <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/appointments" className="therapist-action"><i className="fas fa-clipboard-list"/><div><h5>My Appointments</h5><p>View client details and update session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage your days and time-off requests.</p></div></Link></div>
+  return <div className="therapist-calendar-scroll"><div className={`therapist-calendar ${isWeek?"week":"day"}`} style={{"--day-count":days.length,"--slot-count":SLOTS}}>
+    <div className="therapist-calendar-corner">Time</div>
+    {days.map((date,i)=><div className={`therapist-calendar-dayhead ${date===localDate()?"today":""}`} key={date} style={{gridColumn:i+2,gridRow:1}}><strong>{dateFromLocal(date).toLocaleDateString("en-US",{weekday:"short"})}</strong><span>{formatDate(date)}</span></div>)}
+    {Array.from({length:SLOTS},(_,index) => <div key={`time-${index}`} className={`therapist-calendar-hour ${index%2?"half":""}`} style={{gridColumn:1,gridRow:index+2}}>{index%2===0 ? formatTime(`${String(CAL_START+index/2).padStart(2,"0")}:00`) : ""}</div>)}
+    {days.map((date,i)=>{
+      const shift=availability[weekdayForDate(date)];
+      const block=blockFor(date);
+      const before=shift?.enabled?calendarSlot(shift.start):0;
+      const after=shift?.enabled?calendarSlot(shift.end):SLOTS;
+      return <div key={`bg-${date}`} className="therapist-calendar-column" style={{gridColumn:i+2,gridRow:`2 / span ${SLOTS}`}}>
+        {block ? <div className={`therapist-cal-blocked ${block.type}`}><Icon name="fas fa-ban"/> {block.label}</div> : <>
+          {before>0 && <div className="therapist-cal-outside" style={{top:0,height:`${before/SLOTS*100}%`}}>Outside working hours</div>}
+          {after<SLOTS && <div className="therapist-cal-outside" style={{top:`${after/SLOTS*100}%`,height:`${(SLOTS-after)/SLOTS*100}%`}}>Outside working hours</div>}
         </>}
-
-        {(current === "schedule" || current === "appointments") && <div className="therapist-panel">
-          <div className="therapist-panel-title"><div><h4>{current === "schedule" ? "Assigned Schedule" : "Appointment Management"}</h4><p>{current === "schedule" ? "Your assigned appointments, displayed by date." : "Review appointment statuses and your own session updates."}</p></div></div>
-          {current === "appointments" && <div className="therapist-subtabs" aria-label="Appointment sections">
-            <button type="button" className={appointmentTab === "list" ? "active" : ""} onClick={() => setAppointmentTab("list")}><i className="far fa-calendar-alt" aria-hidden="true" /> Appointment List</button>
-            <button type="button" className={appointmentTab === "history" ? "active" : ""} onClick={() => setAppointmentTab("history")}><i className="fas fa-history" aria-hidden="true" /> My Status History {history.length > 0 && <span className="therapist-counter">{history.length}</span>}</button>
-          </div>}
-          {(current === "schedule" || appointmentTab === "list") && <>
-            <div className="therapist-filters"><div className="therapist-switch" aria-label="Date range"><button type="button" className={view === "daily" ? "selected" : ""} onClick={() => setView("daily")}>Daily</button><button type="button" className={view === "weekly" ? "selected" : ""} onClick={() => setView("weekly")}>Weekly</button><button type="button" className={view === "all" ? "selected" : ""} onClick={() => setView("all")}>All Dates</button></div>{view !== "all" && <label>Date <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}/></label>}<label className="therapist-search">Search <input type="search" placeholder="Client, booking, service..." value={query} onChange={e => setQuery(e.target.value)}/></label></div>
-            {current === "appointments" && <div className="therapist-status-filters" role="group" aria-label="Filter appointments by status">{statuses.map(status => <button type="button" key={status} className={statusFilter === status ? "selected" : ""} aria-pressed={statusFilter === status} onClick={() => selectStatus(status)}>{status} <span>{status === "All" ? appointments.length : byStatus(status)}</span></button>)}</div>}
-            <div className="therapist-list-summary"><span>{visibleRows.length} appointment{visibleRows.length === 1 ? "" : "s"} found</span>{current === "appointments" && (statusFilter !== "All" || view !== "daily") && <button type="button" className="therapist-text-link therapist-reset" onClick={() => { setView("daily"); setStatusFilter("All"); setQuery(""); setSelectedDate(dateOffset(0)); }}>Reset filters</button>}</div>
-            <AppointmentTable rows={visibleRows} onViewDetails={a => setDetailsId(a.id)} allowActions={current === "appointments"} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} onRequestStatus={(appointment, next) => setPending(next === "Completed" ? { kind: "completeWithNotes", appointment, note: appointment.notes } : { kind: "status", appointment, next })}/>
-            {current === "appointments" && lastAction && <div className="therapist-undo-bar"><span>Last update: <strong>{lastAction.id}</strong> → {lastAction.next}</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
-          </>}
-          {current === "appointments" && appointmentTab === "history" && <>
-            <div className="therapist-history-intro"><p>Your session status changes and service-note updates appear here. The Spa Manager maintains the system-wide activity log.</p></div>
-            {history.length === 0 ? <div className="therapist-empty">No changes recorded in this session yet. Try confirming a status change in Appointment List.</div> : <div className="therapist-table-wrap"><table className="therapist-table therapist-history-table"><thead><tr><th>When</th><th>Booking / Client</th><th>Action</th><th>Previous</th><th>New status</th></tr></thead><tbody>{history.map(entry => <tr key={entry.key}><td>{formatTimestamp(entry.at)}</td><td><strong>{entry.id}</strong><small>{entry.client}</small></td><td>{entry.action}</td><td>{entry.previous}</td><td>{entry.next}</td></tr>)}</tbody></table></div>}
-            {lastAction && <div className="therapist-undo-bar"><span>Made a mistake on <strong>{lastAction.id}</strong>?</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
-          </>}
-        </div>}
-
-
-        {current === "availability" && <div className="therapist-two-col"><div className="therapist-panel"><h4>Regular Availability</h4><p className="therapist-subtle">Choose your regular working days.</p><div className="therapist-day-options">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <label key={day}><input type="checkbox" checked={availableDays.includes(day)} onChange={e => setAvailableDays(cur => e.target.checked ? [...cur, day] : cur.filter(x => x !== day))}/> {day}</label>)}</div><button type="button" className="therapist-btn primary" onClick={() => setPending({ kind: "availability" })}>Save Availability</button></div>
-          <div className="therapist-panel"><h4>Request Time Off</h4><form className="therapist-form" onSubmit={e => { e.preventDefault(); if (!offDate || !offReason.trim()) return; setPending({ kind: "timeOff", date: offDate, reason: offReason.trim() }); }}><label>Date <input type="date" required min={dateOffset(0)} value={offDate} onChange={e => setOffDate(e.target.value)} /></label><label>Reason <textarea required rows="3" value={offReason} onChange={e => setOffReason(e.target.value)} placeholder="Reason for requested time off"/></label><button className="therapist-btn primary" type="submit">Submit Request</button></form>{timeOff.length > 0 && <div className="therapist-requests"><h5>My Time-Off Requests</h5>{timeOff.map(t => <p key={t.id}>{formatDate(t.date)} — {t.reason} <Badge status={t.status}/></p>)}</div>}</div>
-        </div>}
+      </div>;
+    })}
+    {active.map(a=>{
+      const start=calendarSlot(a.time);
+      const span=Math.max(1,Math.ceil(a.duration/30));
+      if (start>=SLOTS) return null;
+      return <button type="button" key={a.id} onClick={()=>onDetails(a)}
+        aria-label={`${a.client}, ${a.service}, ${formatDate(a.date)}, ${formatTime(a.time)}, ${a.status}. Open details`}
+        className={`therapist-calendar-event event-${a.status.toLowerCase().replaceAll(" ","-")}`}
+        style={{gridColumn:days.indexOf(a.date)+2,gridRow:`${start+2} / span ${Math.min(span,SLOTS-start)}`}}>
+        <strong>{a.client}</strong><span>{a.service}</span><small>{formatTime(a.time)} · {a.status}</small>
+        {a.status === "Ongoing" && <Elapsed startedAt={a.startedAt}/> }
+      </button>;
+    })}
+  </div></div>;
+}
+function SchedulePage({appointments,availability,requests,onDetails}) {
+  const [date,setDate]=useState(localDate());
+  const [mode,setMode]=useState("day");
+  const days=mode==="week"?weekDays(date):[date];
+  const list=appointments.filter(a=>days.includes(a.date)).sort((a,b)=>dateTimeMs(a)-dateTimeMs(b));
+  const changeDate = delta => setDate(d=>shiftDay(d,delta*(mode==="week"?7:1)));
+  return <div className="therapist-panel">
+    <div className="therapist-panel-title"><div><h2>Assigned Schedule</h2><p>Select an appointment block to view its details.</p></div><div className="therapist-segmented" role="group" aria-label="Schedule view">
+      {["day","week","list"].map(m=><button type="button" key={m} aria-pressed={mode===m} className={mode===m?"active":""} onClick={()=>setMode(m)}>{m==="day"?"Day":m==="week"?"Week":"List"}</button>)}
+    </div></div>
+    <div className="therapist-calendar-controls"><div className="therapist-date-arrows"><Btn variant="outline" aria-label="Previous date range" onClick={()=>changeDate(-1)}><Icon name="fas fa-chevron-left"/></Btn><Btn variant="outline" onClick={()=>setDate(localDate())}>Today</Btn><Btn variant="outline" aria-label="Next date range" onClick={()=>changeDate(1)}><Icon name="fas fa-chevron-right"/></Btn></div>
+      <label>Selected date<input type="date" value={date} onChange={e=>setDate(e.target.value||localDate())}/></label><span className="therapist-range-caption">{days.length===1?formatDate(days[0]):`${formatDate(days[0])} – ${formatDate(days[6])}`}</span></div>
+    <div className="therapist-legend" aria-label="Calendar status colors">{["Confirmed","Checked In","Ongoing","Completed","No-Show"].map(s=><span key={s}><i className={`therapist-legend-dot event-${s.toLowerCase().replaceAll(" ","-")}`}/>{s}</span>)}<span><i className="therapist-legend-dot is-blocked"/>Blocked / time off</span></div>
+    {mode==="list" ? <AppointmentsTable rows={list} onDetails={onDetails} actions={false}/> : <Calendar days={days} appointments={appointments} availability={availability} requests={requests} onDetails={onDetails}/>}
+    <p className="therapist-help">Approved time off and non-working hours appear as blocked. Pending requests are shown as tentative. This is a sample-data calendar.</p>
+  </div>;
+}
+function HistoryTimeline({items}) {
+  if (!items.length) return <div className="therapist-empty"><h4>No status changes yet</h4><p>Session updates will appear here after an action is confirmed.</p></div>;
+  return <ol className="therapist-history-timeline">{[...items].sort((a,b)=>new Date(b.at)-new Date(a.at)).map(entry=><li key={entry.id}><div className="therapist-timeline-dot"><Icon name="fas fa-history"/></div><div className="therapist-timeline-card"><div className="therapist-timeline-top"><strong>{entry.booking} · {entry.client}</strong><time dateTime={entry.at}>{formatDateTime(entry.at)}</time></div><p>{entry.from} <Icon name="fas fa-long-arrow-alt-right"/> <strong>{entry.to}</strong></p><small>Changed by <strong>{entry.actor}</strong></small></div></li>)}</ol>;
+}
+function AppointmentsPage({appointments,history,onDetails,onChange,onEdit}) {
+  const [date,setDate]=useState(localDate());
+  const [range,setRange]=useState("day");
+  const [search,setSearch]=useState("");
+  const [status,setStatus]=useState("All");
+  const [tab,setTab]=useState("appointments");
+  const days=weekDays(date);
+  const inRange=a=>range==="all" || (range==="day"?a.date===date:a.date>=days[0]&&a.date<=days[6]);
+  const relevant=appointments.filter(a=>inRange(a) && `${a.id} ${a.client} ${a.service}`.toLowerCase().includes(search.toLowerCase().trim()));
+  const counts=Object.fromEntries(STATUSES.map(s=>[s, s==="All"?relevant.length:relevant.filter(a=>a.status===s).length]));
+  const shown=relevant.filter(a=>status==="All"||a.status===status).sort((a,b)=>dateTimeMs(a)-dateTimeMs(b));
+  return <div className="therapist-panel"><div className="therapist-panel-title"><div><h2>Appointment Management</h2><p>Check-In is performed by Receptionist; therapists manage sessions only.</p></div></div>
+    <div className="therapist-tabs" role="group" aria-label="Appointment sections"><button type="button" className={tab==="appointments"?"active":""} aria-pressed={tab==="appointments"} onClick={()=>setTab("appointments")}>Appointment List</button><button type="button" className={tab==="history"?"active":""} aria-pressed={tab==="history"} onClick={()=>setTab("history")}>My Status History</button></div>
+    {tab==="history" ? <HistoryTimeline items={history}/> : <>
+      <div className="therapist-filter-bar"><div className="therapist-segmented" role="group" aria-label="Date range">{[["day","Daily"],["week","Weekly"],["all","All Dates"]].map(([value,label])=><button key={value} type="button" className={range===value?"active":""} aria-pressed={range===value} onClick={()=>setRange(value)}>{label}</button>)}</div>
+        {range!=="all"&&<label>Date<input type="date" value={date} onChange={e=>setDate(e.target.value||localDate())}/></label>}
+        <label className="therapist-search-label">Search appointments<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Booking ID, client, service..."/></label>
       </div>
-    </main>
-    <AppointmentDetailsDialog appointment={appointments.find(a => a.id === detailsId) || null} onClose={() => setDetailsId(null)} />
-    <ConfirmDialog pending={pending} onConfirm={confirmPending} onCancel={() => setPending(null)} onNoteChange={note => setPending(prev => prev && ["completeWithNotes", "editNote"].includes(prev.kind) ? { ...prev, note } : prev)} cancelRef={cancelRef}/>
+      <div className="therapist-chips" role="group" aria-label="Filter by appointment status">{STATUSES.map(s=><button type="button" key={s} className={status===s?"active":""} aria-pressed={status===s} onClick={()=>setStatus(s)}>{s}<span>{counts[s]}</span></button>)}</div>
+      <div className="therapist-results-row"><p>{shown.length} appointment{shown.length!==1?"s":""} found {range==="day"?`on ${formatDate(date)}`:range==="week"?"in selected week":"across all dates"}</p><button type="button" className="therapist-text-button" onClick={()=>{setRange("day");setDate(localDate());setStatus("All");setSearch("");}}>Reset filters</button></div>
+      <AppointmentsTable rows={shown} onDetails={onDetails} onChange={onChange} onEdit={onEdit}/>
+    </>}
+  </div>;
+}
+function DashboardPage({appointments,notifications,onDetails,onChange,now}) {
+  const today=localDate();
+  const rows=appointments.filter(a=>a.date===today).sort((a,b)=>dateTimeMs(a)-dateTimeMs(b));
+  const future=appointments.filter(a=>["Confirmed","Checked In"].includes(a.status)&&dateTimeMs(a)+a.duration*60000>=now).sort((a,b)=>dateTimeMs(a)-dateTimeMs(b));
+  const next=future[0]||null;
+  const stats=[
+    {label:"Today's Sessions",count:rows.length,icon:"far fa-calendar-alt"},
+    {label:"Ready to Start",count:rows.filter(a=>a.status==="Checked In").length,icon:"fas fa-user-check"},
+    {label:"Ongoing",count:rows.filter(a=>a.status==="Ongoing").length,icon:"fas fa-spa"},
+    {label:"Completed",count:rows.filter(a=>a.status==="Completed").length,icon:"fas fa-check-circle"}
+  ];
+  return <>
+    <div className="therapist-stats">{stats.map(s=><div className="therapist-stat" key={s.label}><div><p>{s.label}</p><h2>{s.count}</h2></div><span><Icon name={s.icon}/></span></div>)}</div>
+    <div className="therapist-dashboard-columns"><div className="therapist-panel therapist-next"><h2>Next Appointment</h2>{next?<>
+      <div className="therapist-next-main"><div><strong>{next.client}</strong><p>{next.service} · {next.duration} min</p><span>{formatDate(next.date)} at {formatTime(next.time)}</span></div><Status value={next.status}/></div>
+      <div className="therapist-next-countdown"><Icon name="far fa-clock"/> {formatCountdown(dateTimeMs(next)-now)}</div><p className="therapist-muted"><strong>Special request:</strong> {next.specialRequest||"None"}</p>
+      <div className="therapist-next-actions"><Btn onClick={()=>onDetails(next)} variant="outline">View details</Btn><Btn onClick={()=>onChange(next,"Ongoing")} disabled={next.status!=="Checked In"} title={next.status==="Checked In"?"Start session":"Client must be checked in by Receptionist"}>Start Session</Btn></div>
+    </>:<div className="therapist-empty"><p>No upcoming assigned appointments.</p></div>}</div>
+    <div className="therapist-panel therapist-notification-panel"><h2>Notifications</h2><div className="therapist-notification-list">{notifications.map(n=><div key={n.id} className="therapist-notification"><span><Icon name={n.icon}/></span><div><strong>{n.label}</strong><p>{n.text}</p><small>{n.when}</small></div></div>)}</div></div></div>
+    <div className="therapist-panel"><div className="therapist-panel-title"><div><h2>Today's Appointments</h2><p>Sessions assigned to you for {formatDate(today)}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View all appointments</Link></div><AppointmentsTable rows={rows} onDetails={onDetails} actions={false}/></div>
+  </>;
+}
+function AvailabilityPage({availability,setAvailability,requests,appointments,onSubmitRequest,onCancelRequest,toast}) {
+  const [offDate,setOffDate]=useState("");
+  const [reason,setReason]=useState("");
+  const [error,setError]=useState("");
+  const assigned=appointments.filter(a=>a.date===offDate && !["No-Show"].includes(a.status));
+  const validHours=Object.values(availability).every(v=>!v.enabled||toMinutes(v.start)<toMinutes(v.end));
+  const update=(day,key,value)=>setAvailability(prev=>({...prev,[day]:{...prev[day],[key]:value}}));
+  const submit=e=>{
+    e.preventDefault();setError("");
+    if (!offDate || offDate<localDate()) return setError("Choose today or a future date.");
+    if (!reason.trim()) return setError("Please enter a reason for your request.");
+    if (requests.some(r=>r.date===offDate&&r.status!=="Rejected")) return setError("You already have a Pending or Approved request for that date.");
+    onSubmitRequest({date:offDate,reason:reason.trim(),conflicts:assigned.length},()=>{setOffDate("");setReason("");});
+  };
+  return <div className="therapist-availability-layout">
+    <section className="therapist-panel"><h2>Regular Availability</h2><p className="therapist-muted">Choose working days and set the start and end time for each day.</p>
+      <div className="therapist-hours-table"><div className="therapist-hours-header"><span>Day</span><span>Available</span><span>Start</span><span>End</span></div>
+        {WEEKDAYS.map(day=><div className={`therapist-hours-row ${!availability[day].enabled?"inactive":""}`} key={day}>
+          <strong>{day}</strong><label className="therapist-check"><input type="checkbox" checked={availability[day].enabled} onChange={e=>update(day,"enabled",e.target.checked)}/><span className="sr-only">Available on {day}</span></label>
+          <label className="therapist-field-silent"><span className="sr-only">{day} start time</span><input type="time" value={availability[day].start} disabled={!availability[day].enabled} onChange={e=>update(day,"start",e.target.value)}/></label>
+          <label className="therapist-field-silent"><span className="sr-only">{day} end time</span><input type="time" value={availability[day].end} disabled={!availability[day].enabled} onChange={e=>update(day,"end",e.target.value)}/></label>
+        </div>)}
+      </div>
+      {!validHours && <p role="alert" className="therapist-field-error">End time must be later than start time for each selected day.</p>}
+      <Btn disabled={!validHours} onClick={()=>toast("Availability saved for this frontend demo.")}>Save Availability</Btn>
+    </section>
+    <div><section className="therapist-panel"><h2>Request Time Off</h2><form className="therapist-form" onSubmit={submit}>
+      <label htmlFor="therapist-off-date">Requested date <span>*</span><input id="therapist-off-date" type="date" required min={localDate()} value={offDate} onChange={e=>{setOffDate(e.target.value);setError("");}}/></label>
+      <label htmlFor="therapist-off-reason">Reason <span>*</span><textarea id="therapist-off-reason" required rows={3} maxLength={500} value={reason} onChange={e=>{setReason(e.target.value);setError("");}} placeholder="Explain your request"/></label>
+      {offDate && assigned.length>0 && <p className="therapist-inline-warning" role="status"><Icon name="fas fa-exclamation-triangle"/> You have {assigned.length} assigned appointment(s) on {formatDate(offDate)}. Your manager will need to review the conflict.</p>}
+      {error && <p role="alert" className="therapist-field-error">{error}</p>}
+      <button className="therapist-btn primary" type="submit">Submit Request</button>
+    </form></section>
+    <section className="therapist-panel"><h2>My Time-Off Requests</h2>{!requests.length?<div className="therapist-empty"><p>No time-off requests recorded.</p></div>:
+      <div className="therapist-request-list">{[...requests].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div className="therapist-request" key={r.id}><div><strong>{formatDate(r.date)}</strong><p>{r.reason}</p></div><div className="therapist-request-actions"><Status value={r.status}/>{r.status==="Pending"&&<Btn variant="outline" onClick={()=>onCancelRequest(r)}>Cancel</Btn>}</div></div>)}</div>}
+    </section></div>
+  </div>;
+}
+function ProfilePage({name,role,staff,onLogout,toast}) {
+  const [currentPw,setCurrentPw]=useState("");
+  const [newPw,setNewPw]=useState("");
+  const [confirmPw,setConfirmPw]=useState("");
+  const [error,setError]=useState("");
+  const submit=e=>{
+    e.preventDefault();
+    if (!currentPw||!newPw||!confirmPw) return setError("Complete all password fields.");
+    if (newPw.length<8) return setError("New password must have at least 8 characters.");
+    if (currentPw===newPw) return setError("Choose a different password.");
+    if (newPw!==confirmPw) return setError("New password and confirmation do not match.");
+    // No simulated success. Credentials must NEVER be sent or stored until real authentication exists.
+    setCurrentPw("");setNewPw("");setConfirmPw("");setError("");
+    toast("Password change is not available until the authentication backend is connected.","info");
+  };
+  return <div className="therapist-profile-grid"><section className="therapist-panel"><h2>Therapist Information</h2><div className="therapist-profile-avatar">{name.charAt(0)}</div>
+    <div className="therapist-detail-pairs"><div><span>Name</span><strong>{name}</strong></div><div><span>Role</span><strong>{role}</strong></div><div><span>Specialties</span><strong>{staff.specialties.join(", ")}</strong></div><div><span>Email</span><strong>{staff.email}</strong></div><div><span>Contact number</span><strong>{staff.phone}</strong></div></div>
+    <Btn variant="outline" onClick={onLogout}><Icon name="fas fa-sign-out-alt"/> Logout</Btn>
+  </section><section className="therapist-panel"><h2>Change Password</h2><p className="therapist-muted">This form is prepared for staff authentication integration. It does not change a password yet.</p>
+    <form className="therapist-form" onSubmit={submit} autoComplete="off">
+      <label htmlFor="therapist-current-password">Current password<input id="therapist-current-password" type="password" autoComplete="current-password" required value={currentPw} onChange={e=>setCurrentPw(e.target.value)}/></label>
+      <label htmlFor="therapist-new-password">New password<input id="therapist-new-password" type="password" minLength={8} required autoComplete="new-password" value={newPw} onChange={e=>setNewPw(e.target.value)}/></label>
+      <label htmlFor="therapist-confirm-password">Confirm new password<input id="therapist-confirm-password" type="password" minLength={8} required autoComplete="new-password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)}/></label>
+      {error&&<p className="therapist-field-error" role="alert">{error}</p>}
+      <button className="therapist-btn primary" type="submit">Change Password</button>
+    </form></section></div>;
+}
+export default function TherapistPortal() {
+  const location=useLocation(), navigate=useNavigate();
+  const {user,logout}=useAuth();
+  const role=String(user?.role||"").toLowerCase().replace(/[_-]/g," ").trim();
+  const authenticatedTherapist=["therapist","massage therapist"].includes(role);
+  const staffName=authenticatedTherapist ? String(user?.fullName||user?.name||[user?.firstName,user?.lastName].filter(Boolean).join(" ")).trim()||demoStaff.name : demoStaff.name;
+  const [appointments,setAppointments]=useState(createAppointments);
+  const [availability,setAvailability]=useState(createAvailability);
+  const [timeOff,setTimeOff]=useState(createTimeOff);
+  const [notifications]=useState(createNotifications);
+  const [history,setHistory]=useState(()=>createHistory(staffName));
+  const [modal,setModal]=useState(null);
+  const [notes,setNotes]=useState(newNotes);
+  const [onRequestComplete,setOnRequestComplete]=useState(null);
+  const [toastMessage,setToastMessage]=useState(null);
+  const [mobileOpen,setMobileOpen]=useState(false);
+  const [profileOpen,setProfileOpen]=useState(false);
+  const menuRef=useRef(null);
+  const [now,setNow]=useState(Date.now());
+  const section=location.pathname.split("/")[2]||"dashboard";
+  const page=TITLES[section]?section:"dashboard";
+
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
+  useEffect(()=>{setMobileOpen(false);setProfileOpen(false);},[location.pathname]);
+  useEffect(()=>{if(!toastMessage)return;const timer=setTimeout(()=>setToastMessage(null),5000);return()=>clearTimeout(timer);},[toastMessage]);
+  useEffect(()=>{
+    const onPointer=e=>{if(menuRef.current&&!menuRef.current.contains(e.target))setProfileOpen(false);};
+    const onKey=e=>{if(e.key==="Escape")setProfileOpen(false);};
+    document.addEventListener("pointerdown",onPointer);document.addEventListener("keydown",onKey);
+    return()=>{document.removeEventListener("pointerdown",onPointer);document.removeEventListener("keydown",onKey);};
+  },[]);
+  const showToast=(message,type="success")=>setToastMessage({message,type});
+  const closeModal=()=>{setModal(null);setOnRequestComplete(null);};
+  const currentAppointment=modal?.appointmentId?appointments.find(a=>a.id===modal.appointmentId):null;
+  const handleLogout=()=>{logout();navigate("/",{replace:true});};
+  const staffDetails = authenticatedTherapist ? { ...demoStaff, email:user?.email||demoStaff.email, phone:user?.phone||demoStaff.phone, specialties:Array.isArray(user?.specialties)?user.specialties:demoStaff.specialties } : demoStaff;
+  const addHistory=(a,from,to)=>setHistory(prev=>[{id:`H-${Date.now()}-${prev.length}`,booking:a.id,client:a.client,from,to,actor:`Me (${staffName})`,at:new Date().toISOString()},...prev]);
+  const onDetails=a=>setModal({type:"details",appointmentId:a.id});
+  const onChange=(a,next)=>{
+    // A receptionist, not this portal, performs Check-In.
+    if(next==="Ongoing"&&a.status==="Checked In")setModal({type:"start",appointmentId:a.id});
+    else if(next==="Completed"&&a.status==="Ongoing"){setNotes(a.notes||newNotes());setModal({type:"end",appointmentId:a.id});}
+    else if(next==="No-Show"&&["Confirmed","Checked In"].includes(a.status))setModal({type:"noShow",appointmentId:a.id});
+    else showToast("That status transition is not permitted for Massage Therapists.","error");
+  };
+  const onEdit=a=>{if(a.status!=="Completed")return;setNotes(a.notes||newNotes());setModal({type:"editNotes",appointmentId:a.id});};
+  const onConfirm=()=>{
+    if(!modal)return;
+    const a=currentAppointment;
+    if(["start","end","noShow","editNotes"].includes(modal.type)&&!a){closeModal();return;}
+    if(modal.type==="start"){
+      if(a.status!=="Checked In")return closeModal();
+      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Ongoing",startedAt:new Date().toISOString()}:p));
+      addHistory(a,"Checked In","Ongoing");showToast("Session started. Elapsed timer is running in this demo.");
+    }
+    if(modal.type==="end"){
+      if(a.status!=="Ongoing"||![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
+      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"Completed",notes:{...notes}}:p));
+      addHistory(a,"Ongoing","Completed");showToast("Session completed with required service notes (demo data).");
+    }
+    if(modal.type==="noShow"){
+      if(!["Confirmed","Checked In"].includes(a.status))return closeModal();
+      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,status:"No-Show"}:p));
+      addHistory(a,a.status,"No-Show");showToast("No-Show recorded in the frontend demo.");
+    }
+    if(modal.type==="editNotes"){
+      if(a.status!=="Completed"||![notes.areas,notes.pressure,notes.observations,notes.recommendations].every(x=>String(x).trim()))return;
+      setAppointments(prev=>prev.map(p=>p.id===a.id?{...p,notes:{...notes}}:p));
+      addHistory(a,"Service notes","Notes updated");showToast("Service notes updated in the frontend demo.");
+    }
+    if(modal.type==="cancelTimeOff"){
+      setTimeOff(prev=>prev.filter(r=>r.id!==modal.id||r.status!=="Pending"));showToast("Pending request cancelled in the frontend demo.");
+    }
+    if(modal.type==="requestConflict"){
+      setTimeOff(prev=>[{id:`TO-${Date.now()}`,date:modal.date,reason:modal.reason,status:"Pending"},...prev]);
+      onRequestComplete?.();showToast("Time-off request submitted in this frontend demo; manager review is required.");
+    }
+    closeModal();
+  };
+  const submitTimeOff=(request,onSuccess)=>{
+    if(request.conflicts){setOnRequestComplete(()=>onSuccess);setModal({type:"requestConflict",...request});return;}
+    setTimeOff(prev=>[{id:`TO-${Date.now()}`,date:request.date,reason:request.reason,status:"Pending"},...prev]);
+    onSuccess();showToast("Time-off request submitted in this frontend demo; manager review is required.");
+  };
+  // Preserve old /therapist/notes bookmarks. Notes are edited via appointment actions only.
+  if(section==="notes")return <Navigate to="/therapist/appointments" replace/>;
+  return <div className="therapist-layout">
+    <TherapistSidebar mobileOpen={mobileOpen} onClose={()=>setMobileOpen(false)}/>
+    <main className="therapist-main"><header className="therapist-topbar">
+      <button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Icon name="fas fa-bars"/></button>
+      <div className="therapist-user-menu-wrap" ref={menuRef}>
+        <button className="therapist-account-trigger" type="button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={()=>setProfileOpen(v=>!v)}>
+          <span className="therapist-avatar" aria-hidden="true">{staffName.charAt(0).toUpperCase()}</span><span className="therapist-user-text"><strong>{staffName}</strong><small>Massage Therapist</small></span><Icon name={profileOpen?"fas fa-chevron-up":"fas fa-chevron-down"}/>
+        </button>{profileOpen&&<div className="therapist-account-menu" role="menu" aria-label="Staff account menu"><Link role="menuitem" to="/therapist/profile"><Icon name="far fa-user"/> My Profile</Link><button role="menuitem" type="button" onClick={handleLogout}><Icon name="fas fa-sign-out-alt"/> Logout</button></div>}
+      </div>
+    </header>
+    <div className="therapist-content"><div className="therapist-intro"><h1>{TITLES[page][0]}</h1><p>{TITLES[page][1]}</p></div>
+      {page==="dashboard"&&<DashboardPage appointments={appointments} notifications={notifications} onDetails={onDetails} onChange={onChange} now={now}/>}
+      {page==="schedule"&&<SchedulePage appointments={appointments} availability={availability} requests={timeOff} onDetails={onDetails}/>}
+      {page==="appointments"&&<AppointmentsPage appointments={appointments} history={history} onDetails={onDetails} onChange={onChange} onEdit={onEdit}/>}
+      {page==="availability"&&<AvailabilityPage availability={availability} setAvailability={setAvailability} requests={timeOff} appointments={appointments} onSubmitRequest={submitTimeOff} onCancelRequest={r=>setModal({type:"cancelTimeOff",id:r.id,date:r.date})} toast={showToast}/>}
+      {page==="profile"&&<ProfilePage name={staffName} role="Massage Therapist" staff={staffDetails} onLogout={handleLogout} toast={showToast}/>}
+    </div></main>
+    {toastMessage&&<div className={`therapist-toast ${toastMessage.type}`} role="status"><Icon name={toastMessage.type==="error"?"fas fa-exclamation-triangle":"fas fa-check-circle"}/><span>{toastMessage.message}</span><button type="button" aria-label="Dismiss message" onClick={()=>setToastMessage(null)}>×</button></div>}
+    {modal&&<ModalContent modal={modal} appointment={currentAppointment} notes={notes} setNotes={setNotes} onConfirm={onConfirm} onClose={closeModal}/>}
   </div>;
 }

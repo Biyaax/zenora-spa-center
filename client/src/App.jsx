@@ -123,6 +123,7 @@ function App() {
           <Route path="/therapist/appointments" element={<TherapistPortal />} />
           <Route path="/therapist/notes" element={<TherapistPortal />} />
           <Route path="/therapist/availability" element={<TherapistPortal />} />
+                  <Route path="/therapist/profile" element={<TherapistPortal />} />
         </Routes>
       </main>
 
