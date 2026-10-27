@@ -14,9 +14,75 @@ const managerRoutes = require("./routes/managerRoutes");
 
 const app = express();
 
+/* =========================
+   CORS
+========================= */
+
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  "https://zenora-spa-center.vercel.app",
+]);
+
+// Keep supporting CLIENT_URL from Vercel/environment variables.
+if (config.clientUrl) {
+  allowedOrigins.add(
+    String(config.clientUrl).replace(/\/$/, "")
+  );
+}
+
+function isAllowedOrigin(origin) {
+  // Requests such as server-to-server calls may not have an Origin.
+  if (!origin) {
+    return true;
+  }
+
+  // Explicitly allowed URLs.
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+
+    /*
+     * Allow Zenora frontend Preview deployments such as:
+     *
+     * https://zenora-spa-center-nphq0qrfn-biyaaxs-projects.vercel.app
+     * https://zenora-spa-center-rcmmrig73-biyaaxs-projects.vercel.app
+     *
+     * This prevents us from changing CLIENT_URL every time
+     * Vercel creates a new Preview deployment.
+     */
+    const isZenoraPreview =
+      url.protocol === "https:" &&
+      url.hostname.endsWith(
+        "-biyaaxs-projects.vercel.app"
+      ) &&
+      url.hostname.startsWith(
+        "zenora-spa-center-"
+      );
+
+    return isZenoraPreview;
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   cors({
-    origin: config.clientUrl,
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn(
+        `Blocked CORS origin: ${origin}`
+      );
+
+      return callback(
+        new Error("Not allowed by CORS")
+      );
+    },
   })
 );
 
@@ -113,6 +179,13 @@ app.use((error, req, res, next) => {
     return res.status(400).json({
       success: false,
       message: "The request body is not valid JSON.",
+    });
+  }
+
+  if (error.message === "Not allowed by CORS") {
+    return res.status(403).json({
+      success: false,
+      message: "This website is not allowed to access the Zenora API.",
     });
   }
 
