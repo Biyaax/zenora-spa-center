@@ -1,5 +1,6 @@
 const TOKEN_KEY = "zenora_token";
 
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) =>
   token
@@ -19,7 +20,7 @@ export class ApiError extends Error {
  * and throws ApiError with the server's message on failure.
  */
 export async function api(path, { method = "GET", body, query } = {}) {
-  const url = new URL(`/api${path}`, window.location.origin);
+  const url = new URL(`${API_BASE}/api${path}`, window.location.origin);
 
   if (query) {
     for (const [key, value] of Object.entries(query)) {
