@@ -2,6 +2,7 @@
   Routes,
   Route,
   Outlet,
+  Navigate,
   useLocation,
 } from "react-router-dom";
 
@@ -18,7 +19,6 @@ import Services from "./pages/Services";
 import Pricing from "./pages/Pricing";
 import Appointment from "./pages/Appointment";
 import Opening from "./pages/Opening";
-import Team from "./pages/Team";
 import Testimonial from "./pages/Testimonial";
 import Contact from "./pages/Contact";
 
@@ -110,9 +110,21 @@ function App() {
             element={<Opening />}
           />
 
+          {/*
+            The old public Therapists page has been removed.
+
+            Anyone using an old /team bookmark or link
+            will be redirected to the homepage instead
+            of seeing the obsolete mock therapist page.
+          */}
           <Route
             path="/team"
-            element={<Team />}
+            element={
+              <Navigate
+                to="/"
+                replace
+              />
+            }
           />
 
           <Route
@@ -164,7 +176,9 @@ function App() {
 
           <Route
             path="/receptionist/dashboard"
-            element={<ReceptionistDashboard />}
+            element={
+              <ReceptionistDashboard />
+            }
           />
 
           <Route
@@ -195,14 +209,16 @@ function App() {
           {/* =========================
               Spa Manager Pages
           ========================= */}
-            <Route
-              element={
-                <StaffProtectedRoute allowedRole="Spa Manager">
-                  <AppShell />
-                </StaffProtectedRoute>
-              }
-            >
 
+          <Route
+            element={
+              <StaffProtectedRoute
+                allowedRole="Spa Manager"
+              >
+                <AppShell />
+              </StaffProtectedRoute>
+            }
+          >
             <Route
               path="/manager/dashboard"
               element={<ManagerDashboard />}
@@ -225,12 +241,16 @@ function App() {
 
             <Route
               path="/manager/reports/payments"
-              element={<ManagerPaymentReports />}
+              element={
+                <ManagerPaymentReports />
+              }
             />
 
             <Route
               path="/manager/activity-logs"
-              element={<ManagerActivityLogs />}
+              element={
+                <ManagerActivityLogs />
+              }
             />
           </Route>
 
@@ -240,7 +260,9 @@ function App() {
 
           <Route
             element={
-              <StaffProtectedRoute allowedRole="Massage Therapist">
+              <StaffProtectedRoute
+                allowedRole="Massage Therapist"
+              >
                 <Outlet />
               </StaffProtectedRoute>
             }
