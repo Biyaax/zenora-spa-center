@@ -1,229 +1,592 @@
-import { useState } from "react";
-import ReceptionistSidebar from "../../components/ReceptionistSidebar";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-const initialPayments = [
-  {
-    appointmentId: "APT-1001",
-    client: "Bea Mendoza",
-    email: "bea@example.com",
-    service: "Body Massage",
-    therapist: "Maria Santos",
-    date: "2026-10-24",
-    time: "9:00 AM",
-    amount: 650,
-    paymentStatus: "Unpaid",
-    paymentMethod: "",
-    receiptNumber: "",
-  },
-  {
-    appointmentId: "APT-1003",
-    client: "Carla Gomez",
-    email: "carla@example.com",
-    service: "Stone Therapy",
-    therapist: "Maria Santos",
-    date: "2026-10-24",
-    time: "2:00 PM",
-    amount: 850,
-    paymentStatus: "Unpaid",
-    paymentMethod: "",
-    receiptNumber: "",
-  },
-  {
-    appointmentId: "APT-0999",
-    client: "Daniel Reyes",
-    email: "daniel@example.com",
-    service: "Skin Care",
-    therapist: "Angela Reyes",
-    date: "2026-10-24",
-    time: "10:00 AM",
-    amount: 600,
-    paymentStatus: "Paid",
-    paymentMethod: "Cash",
-    receiptNumber: "RCPT-1001",
-  },
-];
+import {
+  useNavigate,
+} from "react-router-dom";
+
+import ReceptionistSidebar from "../../components/ReceptionistSidebar";
+import ReceptionistTopbar from "../../components/ReceptionistTopbar";
+
+import {
+  staffRequest,
+} from "../../api/staffAuth";
+
+function money(value) {
+  return new Intl.NumberFormat(
+    "en-PH",
+    {
+      style: "currency",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+    }
+  ).format(
+    Number(value || 0)
+  );
+}
+
+function labelMethod(method) {
+  if (!method) {
+    return "—";
+  }
+
+  switch (
+    String(method).toLowerCase()
+  ) {
+    case "cash":
+      return "Cash";
+
+    case "gcash":
+      return "GCash";
+
+    case "card":
+      return "Card";
+
+    case "bank transfer":
+      return "Bank Transfer";
+
+    case "other":
+      return "Other";
+
+    default:
+      return method;
+  }
+}
 
 function Payments() {
-  const [payments, setPayments] =
-    useState(initialPayments);
+  const navigate =
+    useNavigate();
 
-  const [search, setSearch] = useState("");
+  const [
+    payments,
+    setPayments,
+  ] = useState([]);
 
-  const [view, setView] = useState("unpaid");
+  const [
+    paymentMethods,
+    setPaymentMethods,
+  ] = useState([
+    "cash",
+    "gcash",
+    "card",
+    "bank transfer",
+    "other",
+  ]);
 
-  const [selectedPayment, setSelectedPayment] =
-    useState(null);
+  const [
+    summary,
+    setSummary,
+  ] = useState({
+    awaitingPayment: 0,
+    recordedPayments: 0,
+  });
 
-  const [paymentMethod, setPaymentMethod] =
-    useState("");
+  const [
+    search,
+    setSearch,
+  ] = useState("");
 
-  const [receipt, setReceipt] = useState(null);
+  const [
+    view,
+    setView,
+  ] = useState("unpaid");
 
-  const filteredPayments = payments.filter(
-    (payment) => {
-      const keyword = search.toLowerCase();
+  const [
+    selectedPayment,
+    setSelectedPayment,
+  ] = useState(null);
 
-      const matchesSearch =
-        payment.appointmentId
-          .toLowerCase()
-          .includes(keyword) ||
-        payment.client
-          .toLowerCase()
-          .includes(keyword) ||
-        payment.service
-          .toLowerCase()
-          .includes(keyword);
+  const [
+    paymentMethod,
+    setPaymentMethod,
+  ] = useState("");
 
-      if (view === "unpaid") {
-        return (
-          matchesSearch &&
-          payment.paymentStatus === "Unpaid"
-        );
-      }
+  const [
+    paymentAmount,
+    setPaymentAmount,
+  ] = useState("");
 
-      if (view === "paid") {
-        return (
-          matchesSearch &&
-          payment.paymentStatus === "Paid"
-        );
-      }
+  const [
+    reference,
+    setReference,
+  ] = useState("");
 
-      return matchesSearch;
-    }
-  );
+  const [
+    receipt,
+    setReceipt,
+  ] = useState(null);
 
-  const unpaidCount = payments.filter(
-    (payment) =>
-      payment.paymentStatus === "Unpaid"
-  ).length;
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const paidTodayTotal = payments
-    .filter(
-      (payment) =>
-        payment.paymentStatus === "Paid"
-    )
-    .reduce(
-      (total, payment) =>
-        total + payment.amount,
-      0
+  const [
+    saving,
+    setSaving,
+  ] = useState(false);
+
+  const [
+    sending,
+    setSending,
+  ] = useState(false);
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  const [
+    message,
+    setMessage,
+  ] = useState("");
+
+  const loadPayments =
+    useCallback(
+      async () => {
+        const token =
+          sessionStorage.getItem(
+            "zenoraStaffToken"
+          );
+
+        if (!token) {
+          navigate(
+            "/staff/login",
+            {
+              replace: true,
+            }
+          );
+
+          return;
+        }
+
+        setLoading(true);
+        setError("");
+
+        try {
+          const data =
+            await staffRequest(
+              "/api/reception/payments",
+              token
+            );
+
+          setPayments(
+            Array.isArray(
+              data.records
+            )
+              ? data.records
+              : []
+          );
+
+          setSummary({
+            awaitingPayment:
+              Number(
+                data.summary
+                  ?.awaitingPayment ||
+                  0
+              ),
+
+            recordedPayments:
+              Number(
+                data.summary
+                  ?.recordedPayments ||
+                  0
+              ),
+          });
+
+          if (
+            Array.isArray(
+              data.paymentMethods
+            ) &&
+            data.paymentMethods
+              .length
+          ) {
+            setPaymentMethods(
+              data.paymentMethods
+            );
+          }
+        } catch (err) {
+          setPayments([]);
+
+          setError(
+            err.message ||
+              "Unable to load payment records."
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [navigate]
     );
 
-  const openPaymentModal = (payment) => {
-    setSelectedPayment(payment);
-    setPaymentMethod("");
-  };
+  useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
 
-  const closePaymentModal = () => {
-    setSelectedPayment(null);
-    setPaymentMethod("");
-  };
+  const filteredPayments =
+    useMemo(() => {
+      const keyword =
+        search
+          .trim()
+          .toLowerCase();
 
-  const recordPayment = () => {
-    if (!selectedPayment || !paymentMethod) {
-      return;
-    }
+      return payments.filter(
+        (payment) => {
+          const matchesSearch =
+            [
+              payment.bookingId,
+              payment.client,
+              payment.email,
+              payment.service,
+              payment.therapist,
+            ].some(
+              (field) =>
+                String(
+                  field || ""
+                )
+                  .toLowerCase()
+                  .includes(
+                    keyword
+                  )
+            );
 
-    const receiptNumber =
-      "RCPT-" +
-      String(Date.now()).slice(-6);
+          if (!matchesSearch) {
+            return false;
+          }
 
-    const paidPayment = {
-      ...selectedPayment,
-      paymentStatus: "Paid",
-      paymentMethod,
-      receiptNumber,
+          if (
+            view === "unpaid"
+          ) {
+            return (
+              payment.paymentStatus ===
+              "Unpaid"
+            );
+          }
+
+          if (
+            view === "paid"
+          ) {
+            return (
+              payment.paymentStatus ===
+              "Paid"
+            );
+          }
+
+          return true;
+        }
+      );
+    }, [
+      payments,
+      search,
+      view,
+    ]);
+
+  const openPaymentModal =
+    (payment) => {
+      setSelectedPayment(
+        payment
+      );
+
+      setPaymentMethod(
+        ""
+      );
+
+      setPaymentAmount(
+        String(
+          Number(
+            payment.balance ||
+              0
+          ).toFixed(2)
+        )
+      );
+
+      setReference("");
+      setError("");
+      setMessage("");
     };
 
-    setPayments((current) =>
-      current.map((payment) =>
-        payment.appointmentId ===
-        selectedPayment.appointmentId
-          ? paidPayment
-          : payment
-      )
-    );
+  const closePaymentModal =
+    () => {
+      if (saving) {
+        return;
+      }
 
-    setReceipt(paidPayment);
+      setSelectedPayment(null);
+      setPaymentMethod("");
+      setPaymentAmount("");
+      setReference("");
+    };
 
-    closePaymentModal();
-  };
+  const recordPayment =
+    async () => {
+      if (
+        !selectedPayment ||
+        !paymentMethod
+      ) {
+        return;
+      }
 
-  const openReceipt = (payment) => {
-    setReceipt(payment);
-  };
+      const amount =
+        Number(paymentAmount);
 
-  const closeReceipt = () => {
-    setReceipt(null);
-  };
+      if (
+        !Number.isFinite(
+          amount
+        ) ||
+        amount <= 0
+      ) {
+        setError(
+          "Enter a valid payment amount."
+        );
 
-  const printReceipt = () => {
-    window.print();
-  };
+        return;
+      }
 
-  const sendReceipt = () => {
-    if (!receipt) {
-      return;
-    }
+      if (
+        amount >
+        Number(
+          selectedPayment.balance
+        )
+      ) {
+        setError(
+          `Payment cannot exceed the remaining balance of ${money(
+            selectedPayment.balance
+          )}.`
+        );
 
-    console.log(
-      `Receipt ${receipt.receiptNumber} would be sent to ${receipt.email}`
-    );
+        return;
+      }
 
-    alert(
-      `Receipt prepared for ${receipt.email}. Email sending will be connected to the backend later.`
-    );
-  };
+      const token =
+        sessionStorage.getItem(
+          "zenoraStaffToken"
+        );
+
+      if (!token) {
+        navigate(
+          "/staff/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+      try {
+        setSaving(true);
+        setError("");
+        setMessage("");
+
+        const data =
+          await staffRequest(
+            `/api/reception/payments/${selectedPayment.appointmentId}`,
+            token,
+            {
+              method: "POST",
+
+              body:
+                JSON.stringify({
+                  amount,
+
+                  method:
+                    paymentMethod,
+
+                  reference:
+                    reference.trim(),
+                }),
+            }
+          );
+
+        setSelectedPayment(
+          null
+        );
+
+        setPaymentMethod("");
+        setPaymentAmount("");
+        setReference("");
+
+        if (data.receipt) {
+          setReceipt(
+            data.receipt
+          );
+        }
+
+        setMessage(
+          "Payment recorded successfully."
+        );
+
+        await loadPayments();
+      } catch (err) {
+        setError(
+          err.message ||
+            "Unable to record payment."
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
+
+  const openReceipt =
+    async (payment) => {
+      if (
+        !payment.latestPaymentId
+      ) {
+        setError(
+          "No payment receipt is available for this appointment."
+        );
+
+        return;
+      }
+
+      const token =
+        sessionStorage.getItem(
+          "zenoraStaffToken"
+        );
+
+      if (!token) {
+        navigate(
+          "/staff/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+      try {
+        setError("");
+
+        const data =
+          await staffRequest(
+            `/api/reception/payments/receipt/${payment.latestPaymentId}`,
+            token
+          );
+
+        setReceipt(
+          data.receipt
+        );
+      } catch (err) {
+        setError(
+          err.message ||
+            "Unable to load receipt."
+        );
+      }
+    };
+
+  const closeReceipt =
+    () => {
+      if (sending) {
+        return;
+      }
+
+      setReceipt(null);
+    };
+
+  const printReceipt =
+    () => {
+      window.print();
+    };
+
+  const sendReceipt =
+    async () => {
+      const paymentId =
+        receipt?.payment?.id;
+
+      if (!paymentId) {
+        return;
+      }
+
+      const token =
+        sessionStorage.getItem(
+          "zenoraStaffToken"
+        );
+
+      if (!token) {
+        navigate(
+          "/staff/login",
+          {
+            replace: true,
+          }
+        );
+
+        return;
+      }
+
+      try {
+        setSending(true);
+        setError("");
+        setMessage("");
+
+        const data =
+          await staffRequest(
+            `/api/reception/payments/receipt/${paymentId}/send`,
+            token,
+            {
+              method: "POST",
+            }
+          );
+
+        setMessage(
+          data.message ||
+            "Receipt sent successfully."
+        );
+      } catch (err) {
+        setError(
+          err.message ||
+            "Unable to send receipt."
+        );
+      } finally {
+        setSending(false);
+      }
+    };
 
   return (
     <div className="receptionist-layout">
       <ReceptionistSidebar />
 
       <main className="receptionist-main">
-        {/* Topbar */}
-        <div className="receptionist-topbar">
-          <div>
-            <p className="text-muted mb-1">
-              Receptionist Portal
-            </p>
-
-            <h3 className="mb-0">
-              Payments
-            </h3>
-          </div>
-
-          <div className="receptionist-topbar-user">
-            <i className="far fa-bell mr-3"></i>
-
-            <div className="receptionist-user-circle">
-              R
-            </div>
-
-            <div className="ml-2">
-              <strong>
-                Receptionist
-              </strong>
-
-              <small className="d-block text-muted">
-                Front Desk
-              </small>
-            </div>
-          </div>
-        </div>
+        <ReceptionistTopbar
+          title="Payments"
+        />
 
         <div className="receptionist-content">
-          {/* Heading */}
           <div className="mb-4">
             <h1 className="mb-2">
               Payment Management
             </h1>
 
             <p className="text-muted mb-0">
-              Record client payments and provide
-              receipts after spa sessions.
+              Record client
+              payments and provide
+              receipts after spa
+              sessions.
             </p>
           </div>
 
-          {/* Summary Cards */}
+          {error && (
+            <div
+              className="alert alert-danger"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+
+          {message && (
+            <div
+              className="alert alert-success"
+              role="status"
+            >
+              {message}
+            </div>
+          )}
+
           <div className="row mb-2">
             <div className="col-md-6 mb-4">
               <div className="receptionist-stat-card">
@@ -233,7 +596,9 @@ function Payments() {
                   </p>
 
                   <h2 className="mb-0">
-                    {unpaidCount}
+                    {loading
+                      ? "—"
+                      : summary.awaitingPayment}
                   </h2>
                 </div>
 
@@ -251,8 +616,11 @@ function Payments() {
                   </p>
 
                   <h2 className="mb-0">
-                    ₱
-                    {paidTodayTotal.toLocaleString()}
+                    {loading
+                      ? "—"
+                      : money(
+                          summary.recordedPayments
+                        )}
                   </h2>
                 </div>
 
@@ -263,17 +631,19 @@ function Payments() {
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="receptionist-payment-tabs mb-4">
             <button
               type="button"
               className={
-                view === "unpaid"
+                view ===
+                "unpaid"
                   ? "active"
                   : ""
               }
               onClick={() =>
-                setView("unpaid")
+                setView(
+                  "unpaid"
+                )
               }
             >
               Awaiting Payment
@@ -282,12 +652,15 @@ function Payments() {
             <button
               type="button"
               className={
-                view === "paid"
+                view ===
+                "paid"
                   ? "active"
                   : ""
               }
               onClick={() =>
-                setView("paid")
+                setView(
+                  "paid"
+                )
               }
             >
               Paid
@@ -296,35 +669,41 @@ function Payments() {
             <button
               type="button"
               className={
-                view === "all"
+                view ===
+                "all"
                   ? "active"
                   : ""
               }
               onClick={() =>
-                setView("all")
+                setView(
+                  "all"
+                )
               }
             >
               All
             </button>
           </div>
 
-          {/* Search */}
           <div className="receptionist-panel mb-4">
             <div className="receptionist-search-box">
               <i className="fas fa-search"></i>
 
               <input
                 type="text"
-                placeholder="Search booking ID, client, or service..."
+                placeholder="Search booking ID, client, service, or therapist..."
                 value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
+                onChange={(
+                  event
+                ) =>
+                  setSearch(
+                    event.target
+                      .value
+                  )
                 }
               />
             </div>
           </div>
 
-          {/* Table */}
           <div className="receptionist-panel">
             <div className="mb-4">
               <h4 className="mb-1">
@@ -332,37 +711,77 @@ function Payments() {
               </h4>
 
               <p className="text-muted mb-0">
-                {
-                  filteredPayments.length
-                }{" "}
-                record
-                {filteredPayments.length !== 1
-                  ? "s"
-                  : ""}{" "}
-                found
+                {loading
+                  ? "Loading payment records..."
+                  : `${
+                      filteredPayments.length
+                    } record${
+                      filteredPayments.length ===
+                      1
+                        ? ""
+                        : "s"
+                    } found`}
               </p>
             </div>
 
-            {filteredPayments.length >
-            0 ? (
+            {loading ? (
+              <div className="receptionist-empty-state">
+                <i className="fas fa-spinner fa-spin"></i>
+
+                <h4>
+                  Loading Payments
+                </h4>
+
+                <p>
+                  Retrieving real
+                  payment records.
+                </p>
+              </div>
+            ) : filteredPayments.length >
+              0 ? (
               <div className="table-responsive">
                 <table className="table receptionist-table receptionist-payment-table">
                   <thead>
                     <tr>
-                      <th>Booking ID</th>
-                      <th>Client</th>
-                      <th>Service</th>
-                      <th>Therapist</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Method</th>
-                      <th>Action</th>
+                      <th>
+                        Booking ID
+                      </th>
+
+                      <th>
+                        Client
+                      </th>
+
+                      <th>
+                        Service
+                      </th>
+
+                      <th>
+                        Therapist
+                      </th>
+
+                      <th>
+                        Balance
+                      </th>
+
+                      <th>
+                        Status
+                      </th>
+
+                      <th>
+                        Method
+                      </th>
+
+                      <th>
+                        Action
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {filteredPayments.map(
-                      (payment) => (
+                      (
+                        payment
+                      ) => (
                         <tr
                           key={
                             payment.appointmentId
@@ -371,38 +790,46 @@ function Payments() {
                           <td>
                             <strong>
                               {
-                                payment.appointmentId
+                                payment.bookingId
                               }
                             </strong>
                           </td>
 
                           <td>
                             <strong>
-                              {payment.client}
+                              {payment.client ||
+                                "—"}
                             </strong>
 
                             <small className="d-block text-muted">
-                              {payment.email}
+                              {payment.email ||
+                                "No email"}
                             </small>
                           </td>
 
                           <td>
-                            {
-                              payment.service
-                            }
+                            {payment.service ||
+                              "—"}
                           </td>
 
                           <td>
-                            {
-                              payment.therapist
-                            }
+                            {payment.therapist ||
+                              "—"}
                           </td>
 
                           <td>
                             <strong>
-                              ₱
-                              {payment.amount.toLocaleString()}
+                              {money(
+                                payment.balance
+                              )}
                             </strong>
+
+                            <small className="d-block text-muted">
+                              Due:{" "}
+                              {money(
+                                payment.amountDue
+                              )}
+                            </small>
                           </td>
 
                           <td>
@@ -421,8 +848,9 @@ function Payments() {
                           </td>
 
                           <td>
-                            {payment.paymentMethod ||
-                              "—"}
+                            {labelMethod(
+                              payment.latestPaymentMethod
+                            )}
                           </td>
 
                           <td>
@@ -470,8 +898,8 @@ function Payments() {
                 </h4>
 
                 <p>
-                  No records match the
-                  selected view.
+                  No records match
+                  the selected view.
                 </p>
               </div>
             )}
@@ -479,14 +907,16 @@ function Payments() {
         </div>
       </main>
 
-      {/* Record Payment Modal */}
       {selectedPayment && (
         <div className="receptionist-modal-backdrop">
           <div className="receptionist-payment-modal">
             <button
               type="button"
               className="receptionist-modal-close"
-              onClick={closePaymentModal}
+              onClick={
+                closePaymentModal
+              }
+              disabled={saving}
             >
               ×
             </button>
@@ -497,7 +927,7 @@ function Payments() {
 
             <p className="text-muted mb-4">
               {
-                selectedPayment.appointmentId
+                selectedPayment.bookingId
               }
             </p>
 
@@ -528,52 +958,139 @@ function Payments() {
 
               <div>
                 <span>
-                  Amount Due
+                  Total Due
+                </span>
+
+                <strong>
+                  {money(
+                    selectedPayment.amountDue
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  Paid So Far
+                </span>
+
+                <strong>
+                  {money(
+                    selectedPayment.paidToDate
+                  )}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  Remaining Balance
                 </span>
 
                 <strong className="text-primary">
-                  ₱
-                  {selectedPayment.amount.toLocaleString()}
+                  {money(
+                    selectedPayment.balance
+                  )}
                 </strong>
               </div>
             </div>
 
             <div className="form-group mt-4">
               <label>
+                Amount *
+              </label>
+
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={
+                  selectedPayment.balance
+                }
+                className="form-control"
+                value={
+                  paymentAmount
+                }
+                onChange={(
+                  event
+                ) =>
+                  setPaymentAmount(
+                    event.target
+                      .value
+                  )
+                }
+              />
+            </div>
+
+            <div className="form-group">
+              <label>
                 Payment Method *
               </label>
 
               <select
                 className="form-control"
-                value={paymentMethod}
-                onChange={(e) =>
+                value={
+                  paymentMethod
+                }
+                onChange={(
+                  event
+                ) =>
                   setPaymentMethod(
-                    e.target.value
+                    event.target
+                      .value
                   )
                 }
               >
                 <option value="">
-                  Select payment method
+                  Select payment
+                  method
                 </option>
 
-                <option value="Cash">
-                  Cash
-                </option>
-
-                <option value="Card">
-                  Card
-                </option>
-
-                <option value="E-Wallet">
-                  E-Wallet
-                </option>
+                {paymentMethods.map(
+                  (method) => (
+                    <option
+                      key={
+                        method
+                      }
+                      value={
+                        method
+                      }
+                    >
+                      {labelMethod(
+                        method
+                      )}
+                    </option>
+                  )
+                )}
               </select>
 
               <small className="text-muted">
-                The system only records the
-                payment method. It does not
-                process online payments.
+                The system records
+                the payment only. It
+                does not charge the
+                customer's card or
+                wallet automatically.
               </small>
+            </div>
+
+            <div className="form-group">
+              <label>
+                Reference Number
+              </label>
+
+              <input
+                type="text"
+                className="form-control"
+                maxLength={60}
+                placeholder="Optional"
+                value={reference}
+                onChange={(
+                  event
+                ) =>
+                  setReference(
+                    event.target
+                      .value
+                  )
+                }
+              />
             </div>
 
             <div className="d-flex justify-content-end mt-4">
@@ -583,6 +1100,7 @@ function Payments() {
                 onClick={
                   closePaymentModal
                 }
+                disabled={saving}
               >
                 Cancel
               </button>
@@ -590,24 +1108,34 @@ function Payments() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!paymentMethod}
-                onClick={recordPayment}
+                disabled={
+                  saving ||
+                  !paymentMethod ||
+                  !paymentAmount
+                }
+                onClick={
+                  recordPayment
+                }
               >
-                Confirm Payment
+                {saving
+                  ? "Recording..."
+                  : "Confirm Payment"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Receipt Modal */}
       {receipt && (
         <div className="receptionist-modal-backdrop">
           <div className="receptionist-receipt-modal">
             <button
               type="button"
               className="receptionist-modal-close receptionist-no-print"
-              onClick={closeReceipt}
+              onClick={
+                closeReceipt
+              }
+              disabled={sending}
             >
               ×
             </button>
@@ -619,11 +1147,13 @@ function Payments() {
                 </h2>
 
                 <p className="mb-0">
-                  Spa & Massage Wellness Center
+                  Spa & Massage
+                  Wellness Center
                 </p>
 
                 <small className="text-muted">
-                  Official Payment Receipt
+                  Official Payment
+                  Receipt
                 </small>
               </div>
 
@@ -636,7 +1166,7 @@ function Payments() {
 
                 <strong>
                   {
-                    receipt.receiptNumber
+                    receipt.receipt_number
                   }
                 </strong>
               </div>
@@ -647,9 +1177,14 @@ function Payments() {
                 </span>
 
                 <strong>
-                  {
-                    receipt.appointmentId
-                  }
+                  {`APT-${String(
+                    receipt
+                      .appointment
+                      ?.id || ""
+                  ).padStart(
+                    4,
+                    "0"
+                  )}`}
                 </strong>
               </div>
 
@@ -659,7 +1194,8 @@ function Payments() {
                 </span>
 
                 <strong>
-                  {receipt.client}
+                  {receipt.client
+                    ?.name || "—"}
                 </strong>
               </div>
 
@@ -669,7 +1205,10 @@ function Payments() {
                 </span>
 
                 <strong>
-                  {receipt.service}
+                  {receipt
+                    .appointment
+                    ?.service_name ||
+                    "—"}
                 </strong>
               </div>
 
@@ -679,7 +1218,10 @@ function Payments() {
                 </span>
 
                 <strong>
-                  {receipt.therapist}
+                  {receipt
+                    .appointment
+                    ?.therapist_name ||
+                    "—"}
                 </strong>
               </div>
 
@@ -689,13 +1231,68 @@ function Payments() {
                 </span>
 
                 <strong>
-                  {
-                    receipt.paymentMethod
-                  }
+                  {labelMethod(
+                    receipt
+                      .payment
+                      ?.method
+                  )}
                 </strong>
               </div>
 
+              {receipt.payment
+                ?.reference_number && (
+                <div className="receptionist-receipt-row">
+                  <span>
+                    Reference
+                  </span>
+
+                  <strong>
+                    {
+                      receipt
+                        .payment
+                        .reference_number
+                    }
+                  </strong>
+                </div>
+              )}
+
               <hr />
+
+              <div className="receptionist-receipt-row">
+                <span>
+                  Total Due
+                </span>
+
+                <strong>
+                  {money(
+                    receipt.amount_due
+                  )}
+                </strong>
+              </div>
+
+              <div className="receptionist-receipt-row">
+                <span>
+                  Paid To Date
+                </span>
+
+                <strong>
+                  {money(
+                    receipt.paid_to_date
+                  )}
+                </strong>
+              </div>
+
+              <div className="receptionist-receipt-row">
+                <span>
+                  Remaining Balance
+                </span>
+
+                <strong>
+                  {money(
+                    receipt.balance
+                  )}
+                </strong>
+              </div>
 
               <div className="receptionist-receipt-total">
                 <span>
@@ -703,13 +1300,16 @@ function Payments() {
                 </span>
 
                 <strong>
-                  ₱
-                  {receipt.amount.toLocaleString()}
+                  {money(
+                    receipt.payment
+                      ?.amount
+                  )}
                 </strong>
               </div>
 
               <p className="text-center text-muted small mt-4 mb-0">
-                Thank you for choosing Zenora.
+                Thank you for
+                choosing Zenora.
               </p>
             </div>
 
@@ -717,7 +1317,9 @@ function Payments() {
               <button
                 type="button"
                 className="btn btn-outline-primary"
-                onClick={printReceipt}
+                onClick={
+                  printReceipt
+                }
               >
                 <i className="fas fa-print mr-2"></i>
                 Print Receipt
@@ -726,10 +1328,16 @@ function Payments() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={sendReceipt}
+                onClick={
+                  sendReceipt
+                }
+                disabled={sending}
               >
                 <i className="far fa-envelope mr-2"></i>
-                Send Receipt
+
+                {sending
+                  ? "Sending..."
+                  : "Send Receipt"}
               </button>
             </div>
           </div>
