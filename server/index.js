@@ -31,6 +31,11 @@ const managerStaffRoutes = require(
   "./routes/managerStaff"
 );
 
+const managerActivityLogsRoutes =
+  require(
+    "./routes/managerActivityLogs"
+  );
+
 const receptionDashboardRoutes =
   require(
     "./routes/receptionDashboard"
@@ -263,10 +268,6 @@ app.use(
   receptionClientsRoutes
 );
 
-/*
-  Existing Receptionist routes:
-  walk-ins, booking-on-behalf, etc.
-*/
 app.use(
   "/api/reception",
   require("./routes/reception")
@@ -289,6 +290,9 @@ app.use(
    MANAGER
 ========================= */
 
+/*
+  Staff management.
+*/
 app.use(
   "/api/manager",
   requireAuth,
@@ -298,6 +302,27 @@ app.use(
   managerStaffRoutes
 );
 
+/*
+  Activity logs.
+
+  IMPORTANT:
+  This comes BEFORE managerRoutes
+  because managerRoutes still has
+  the old /activity-logs endpoint.
+*/
+app.use(
+  "/api/manager/activity-logs",
+  requireAuth,
+  requireRole(
+    "Spa Manager"
+  ),
+  managerActivityLogsRoutes
+);
+
+/*
+  Dashboard, services,
+  time-off and reports.
+*/
 app.use(
   "/api/manager",
   requireAuth,
