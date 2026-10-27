@@ -1,30 +1,56 @@
 const TOKEN_KEY = "zenora_token";
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token) =>
-  token
-    ? localStorage.setItem(TOKEN_KEY, token)
-    : localStorage.removeItem(TOKEN_KEY);
+const FALLBACK_API_BASE =
+  "https://zenora-spa-api-git-bea-supabase-migration-biyaaxs-projects.vercel.app";
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  FALLBACK_API_BASE
+).replace(/\/$/, "");
+
+export const getToken = () =>
+  localStorage.getItem(TOKEN_KEY);
+
+export const setToken = (token) => {
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+};
 
 export class ApiError extends Error {
   constructor(message, status, details) {
     super(message);
+    this.name = "ApiError";
     this.status = status;
     this.details = details;
   }
 }
 
-/**
- * Small fetch wrapper: sends the login token, parses JSON,
- * and throws ApiError with the server's message on failure.
- */
-export async function api(path, { method = "GET", body, query } = {}) {
-  const url = new URL(`/api${path}`, window.location.origin);
+export async function api(
+  path,
+  {
+    method = "GET",
+    body,
+    query,
+  } = {}
+) {
+  const url = new URL(
+    `${API_BASE}/api${path}`
+  );
 
   if (query) {
     for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined && value !== null && value !== "") {
-        url.searchParams.set(key, value);
+      if (
+        value !== undefined &&
+        value !== null &&
+        value !== ""
+      ) {
+        url.searchParams.set(
+          key,
+          String(value)
+        );
       }
     }
   }
@@ -32,17 +58,30 @@ export async function api(path, { method = "GET", body, query } = {}) {
   const headers = {};
   const token = getToken();
 
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (token) {
+    headers.Authorization =
+      `Bearer ${token}`;
+  }
+
+  if (body !== undefined) {
+    headers["Content-Type"] =
+      "application/json";
+  }
 
   let response;
 
   try {
-    response = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    response = await fetch(
+      url.toString(),
+      {
+        method,
+        headers,
+        body:
+          body !== undefined
+            ? JSON.stringify(body)
+            : undefined,
+      }
+    );
   } catch {
     throw new ApiError(
       "Cannot reach the server. Please check your connection.",
@@ -55,17 +94,25 @@ export async function api(path, { method = "GET", body, query } = {}) {
   try {
     data = await response.json();
   } catch {
-    // non-JSON response
+    // Response was not JSON.
   }
 
   if (!response.ok) {
-    if (response.status === 401 && token) {
-      // Session expired: let the app know so it can log out.
-      window.dispatchEvent(new Event("zenora:unauthorized"));
+    if (
+      response.status === 401 &&
+      token
+    ) {
+      window.dispatchEvent(
+        new Event(
+          "zenora:unauthorized"
+        )
+      );
     }
 
     throw new ApiError(
-      data?.message || "Something went wrong. Please try again.",
+      data?.message ||
+        data?.error ||
+        "Something went wrong. Please try again.",
       response.status,
       data?.details
     );

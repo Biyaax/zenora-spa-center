@@ -1,56 +1,96 @@
-const db = require("../database/db");
+const db = require("../database/postgres");
 const { sendMail } = require("./mailer");
 
 /** On-screen notification for one user. */
-function notifyUser(userId, type, title, message) {
+async function notifyUser(userId, type, title, message) {
   if (!userId) return;
 
-  db.prepare(
-    `INSERT INTO notifications (user_id, type, title, message)
-     VALUES (?, ?, ?, ?)`
-  ).run(userId, type, title, message);
+  await db.query(
+    `
+    INSERT INTO notifications (
+      user_id,
+      type,
+      title,
+      message
+    )
+    VALUES ($1, $2, $3, $4)
+    `,
+    [userId, type, title, message]
+  );
 }
 
 /** On-screen notification for every active user with a role. */
-function notifyRole(roleName, type, title, message) {
-  const users = db
-    .prepare(
-      `SELECT u.id
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       WHERE r.name = ? AND u.is_active = 1`
-    )
-    .all(roleName);
+async function notifyRole(roleName, type, title, message) {
+  const result = await db.query(
+    `
+    SELECT u.id
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    WHERE r.name = $1
+      AND u.is_active = 1
+    `,
+    [roleName]
+  );
 
-  for (const user of users) {
-    notifyUser(user.id, type, title, message);
+  for (const user of result.rows) {
+    await notifyUser(user.id, type, title, message);
   }
 }
 
 /** On-screen notification (if the client has an account) plus email. */
-function notifyClient(client, type, title, message) {
+async function notifyClient(client, type, title, message) {
   if (client.user_id) {
-    notifyUser(client.user_id, type, title, message);
+    await notifyUser(
+      client.user_id,
+      type,
+      title,
+      message
+    );
   }
 
   if (client.email) {
     // Fire and forget: a failed email must never break the booking flow.
-    void sendMail({ to: client.email, subject: title, text: message });
+    sendMail({
+      to: client.email,
+      subject: title,
+      text: message,
+    }).catch((error) => {
+      console.error("Failed to send notification email:", error);
+    });
   }
 }
 
-function logActivity(userId, action, entityType, entityId, details) {
-  db.prepare(
-    `INSERT INTO activity_logs
-       (user_id, action, entity_type, entity_id, details)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(
-    userId ?? null,
-    action,
-    entityType ?? null,
-    entityId ?? null,
-    details ?? null
+async function logActivity(
+  userId,
+  action,
+  entityType,
+  entityId,
+  details
+) {
+  await db.query(
+    `
+    INSERT INTO activity_logs (
+      user_id,
+      action,
+      entity_type,
+      entity_id,
+      details
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    `,
+    [
+      userId ?? null,
+      action,
+      entityType ?? null,
+      entityId ?? null,
+      details ?? null,
+    ]
   );
 }
 
-module.exports = { notifyUser, notifyRole, notifyClient, logActivity };
+module.exports = {
+  notifyUser,
+  notifyRole,
+  notifyClient,
+  logActivity,
+};

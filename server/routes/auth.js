@@ -1,11 +1,16 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 
-const db = require("../database/db");
+const db = require("../database/postgres");
 const token = require("../lib/token");
 const v = require("../lib/validate");
 const { requireAuth } = require("../middleware/auth");
-const { HttpError, badRequest, unauthorized, conflict } = require("../lib/errors");
+const {
+  HttpError,
+  badRequest,
+  unauthorized,
+  conflict,
+} = require("../lib/errors");
 const { logActivity } = require("../lib/notify");
 
 const router = express.Router();
@@ -28,6 +33,7 @@ const MAX_FAILURES = 8;
 
 function isLocked(key) {
   const entry = failures.get(key);
+
   if (!entry) return false;
 
   if (Date.now() - entry.first > WINDOW_MS) {
@@ -42,7 +48,10 @@ function recordFailure(key) {
   const entry = failures.get(key);
 
   if (!entry || Date.now() - entry.first > WINDOW_MS) {
-    failures.set(key, { count: 1, first: Date.now() });
+    failures.set(key, {
+      count: 1,
+      first: Date.now(),
+    });
   } else {
     entry.count++;
   }
@@ -50,50 +59,152 @@ function recordFailure(key) {
 
 /* ---------- Register (always creates a Guest) ---------- */
 
-router.post("/register", (req, res) => {
-  const firstName = v.text(req.body.firstName, "First name", { max: 80 });
-  const lastName = v.text(req.body.lastName, "Last name", { max: 80 });
+router.post("/register", async (req, res) => {
+  const firstName = v.text(
+    req.body.firstName,
+    "First name",
+    { max: 80 }
+  );
+
+  const lastName = v.text(
+    req.body.lastName,
+    "Last name",
+    { max: 80 }
+  );
+
   const email = v.email(req.body.email);
-  const phone = v.phone(req.body.phone, "Phone", { required: true });
+
+  const phone = v.phone(
+    req.body.phone,
+    "Phone",
+    { required: true }
+  );
+
   const password = req.body.password;
 
-  if (typeof password !== "string" || password.length < 8) {
-    throw badRequest("Password must be at least 8 characters.");
+  if (
+    typeof password !== "string" ||
+    password.length < 8
+  ) {
+    throw badRequest(
+      "Password must be at least 8 characters."
+    );
   }
 
   if (password.length > 72) {
-    throw badRequest("Password must be 72 characters or fewer.");
+    throw badRequest(
+      "Password must be 72 characters or fewer."
+    );
   }
 
-  if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) {
-    throw conflict("An account with this email already exists.");
+  const existingResult = await db.query(
+    `
+    SELECT 1
+    FROM users
+    WHERE email = $1
+    `,
+    [email]
+  );
+
+  if (existingResult.rows.length > 0) {
+    throw conflict(
+      "An account with this email already exists."
+    );
   }
 
-  const guestRole = db
-    .prepare("SELECT id FROM roles WHERE name = 'Guest'")
-    .get();
+  const guestRoleResult = await db.query(
+    `
+    SELECT id
+    FROM roles
+    WHERE name = 'Guest'
+    `
+  );
 
-  const passwordHash = bcrypt.hashSync(password, 10);
+  const guestRole = guestRoleResult.rows[0];
 
-  const userId = db.transaction(() => {
-    const id = db
-      .prepare(
-        `INSERT INTO users
-           (role_id, first_name, last_name, email, password_hash, phone)
-         VALUES (?, ?, ?, ?, ?, ?)`
+  if (!guestRole) {
+    throw new Error("Guest role is missing from the database.");
+  }
+
+  const passwordHash = bcrypt.hashSync(
+    password,
+    10
+  );
+
+  const client = await db.connect();
+
+  let userId;
+
+  try {
+    await client.query("BEGIN");
+
+    const userResult = await client.query(
+      `
+      INSERT INTO users (
+        role_id,
+        first_name,
+        last_name,
+        email,
+        password_hash,
+        phone
       )
-      .run(guestRole.id, firstName, lastName, email, passwordHash, phone)
-      .lastInsertRowid;
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
+      `,
+      [
+        guestRole.id,
+        firstName,
+        lastName,
+        email,
+        passwordHash,
+        phone,
+      ]
+    );
 
-    db.prepare(
-      `INSERT INTO clients (user_id, first_name, last_name, email, phone)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(id, firstName, lastName, email, phone);
+    userId = userResult.rows[0].id;
 
-    return Number(id);
-  })();
+    await client.query(
+      `
+      INSERT INTO clients (
+        user_id,
+        first_name,
+        last_name,
+        email,
+        phone
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      `,
+      [
+        userId,
+        firstName,
+        lastName,
+        email,
+        phone,
+      ]
+    );
 
-  logActivity(userId, "auth.register", "user", userId, email);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    if (error.code === "23505") {
+      throw conflict(
+        "An account with this email already exists."
+      );
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await logActivity(
+    userId,
+    "auth.register",
+    "user",
+    userId,
+    email
+  );
 
   const user = {
     id: userId,
@@ -113,11 +224,14 @@ router.post("/register", (req, res) => {
 
 /* ---------- Login (all roles) ---------- */
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const email = v.email(req.body.email);
   const password = req.body.password;
 
-  if (typeof password !== "string" || !password) {
+  if (
+    typeof password !== "string" ||
+    !password
+  ) {
     throw badRequest("Password is required.");
   }
 
@@ -130,14 +244,20 @@ router.post("/login", (req, res) => {
     );
   }
 
-  const row = db
-    .prepare(
-      `SELECT u.*, r.name AS role
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       WHERE u.email = ?`
-    )
-    .get(email);
+  const result = await db.query(
+    `
+    SELECT
+      u.*,
+      r.name AS role
+    FROM users u
+    JOIN roles r
+      ON r.id = u.role_id
+    WHERE u.email = $1
+    `,
+    [email]
+  );
+
+  const row = result.rows[0];
 
   // Compare even when the user is missing, so timing does not reveal
   // which emails exist.
@@ -146,14 +266,26 @@ router.post("/login", (req, res) => {
     row?.password_hash || DUMMY_HASH
   );
 
-  if (!row || !valid || !row.is_active) {
+  if (
+    !row ||
+    !valid ||
+    !row.is_active
+  ) {
     recordFailure(key);
-    throw unauthorized("Incorrect email or password.");
+    throw unauthorized(
+      "Incorrect email or password."
+    );
   }
 
   failures.delete(key);
 
-  logActivity(row.id, "auth.login", "user", row.id, null);
+  await logActivity(
+    row.id,
+    "auth.login",
+    "user",
+    row.id,
+    null
+  );
 
   res.json({
     success: true,
@@ -165,37 +297,100 @@ router.post("/login", (req, res) => {
 /* ---------- Current user ---------- */
 
 router.get("/me", requireAuth, (req, res) => {
-  res.json({ success: true, user: publicUser(req.user) });
-});
-
-router.patch("/me", requireAuth, (req, res) => {
-  const firstName = v.text(req.body.firstName ?? req.user.first_name, "First name", { max: 80 });
-  const lastName = v.text(req.body.lastName ?? req.user.last_name, "Last name", { max: 80 });
-  const phone = v.phone(req.body.phone ?? req.user.phone, "Phone");
-
-  db.transaction(() => {
-    db.prepare(
-      `UPDATE users
-       SET first_name = ?, last_name = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    ).run(firstName, lastName, phone, req.user.id);
-
-    db.prepare(
-      `UPDATE clients
-       SET first_name = ?, last_name = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = ?`
-    ).run(firstName, lastName, phone, req.user.id);
-  })();
-
   res.json({
     success: true,
-    user: publicUser({
-      ...req.user,
-      first_name: firstName,
-      last_name: lastName,
-      phone,
-    }),
+    user: publicUser(req.user),
   });
 });
+
+router.patch(
+  "/me",
+  requireAuth,
+  async (req, res) => {
+    const firstName = v.text(
+      req.body.firstName ??
+        req.user.first_name,
+      "First name",
+      { max: 80 }
+    );
+
+    const lastName = v.text(
+      req.body.lastName ??
+        req.user.last_name,
+      "Last name",
+      { max: 80 }
+    );
+
+    const phone = v.phone(
+      req.body.phone ?? req.user.phone,
+      "Phone"
+    );
+
+    const client = await db.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `
+        UPDATE users
+        SET
+          first_name = $1,
+          last_name = $2,
+          phone = $3,
+          updated_at = to_char(
+            CURRENT_TIMESTAMP,
+            'YYYY-MM-DD HH24:MI:SS'
+          )
+        WHERE id = $4
+        `,
+        [
+          firstName,
+          lastName,
+          phone,
+          req.user.id,
+        ]
+      );
+
+      await client.query(
+        `
+        UPDATE clients
+        SET
+          first_name = $1,
+          last_name = $2,
+          phone = $3,
+          updated_at = to_char(
+            CURRENT_TIMESTAMP,
+            'YYYY-MM-DD HH24:MI:SS'
+          )
+        WHERE user_id = $4
+        `,
+        [
+          firstName,
+          lastName,
+          phone,
+          req.user.id,
+        ]
+      );
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    res.json({
+      success: true,
+      user: publicUser({
+        ...req.user,
+        first_name: firstName,
+        last_name: lastName,
+        phone,
+      }),
+    });
+  }
+);
 
 module.exports = router;

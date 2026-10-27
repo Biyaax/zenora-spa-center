@@ -5,80 +5,258 @@ import {
   useState,
 } from "react";
 
+import {
+  api,
+  getToken,
+  setToken,
+} from "../api/client";
+
 const AuthContext = createContext(null);
+
+function normalizeUser(rawUser) {
+  if (!rawUser) {
+    return null;
+  }
+
+  return {
+    ...rawUser,
+
+    firstName:
+      rawUser.firstName ??
+      rawUser.first_name ??
+      "",
+
+    lastName:
+      rawUser.lastName ??
+      rawUser.last_name ??
+      "",
+
+    role:
+      rawUser.role ??
+      rawUser.role_name ??
+      "",
+  };
+}
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem("zenoraUser");
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+  function saveUser(rawUser) {
+    const nextUser = normalizeUser(rawUser);
+
+    setUser(nextUser);
+
+    if (nextUser) {
+      localStorage.setItem(
+        "zenoraUser",
+        JSON.stringify(nextUser)
+      );
+    } else {
+      localStorage.removeItem("zenoraUser");
     }
+  }
+
+  useEffect(() => {
+    const token = getToken();
+
+    const savedUser =
+      localStorage.getItem("zenoraUser");
+
+    if (token && savedUser) {
+      try {
+        saveUser(
+          JSON.parse(savedUser)
+        );
+      } catch {
+        setToken(null);
+        localStorage.removeItem(
+          "zenoraUser"
+        );
+      }
+    } else {
+      setToken(null);
+      localStorage.removeItem(
+        "zenoraUser"
+      );
+    }
+
+    setAuthLoading(false);
+
+    function handleUnauthorized() {
+      setToken(null);
+      saveUser(null);
+    }
+
+    window.addEventListener(
+      "zenora:unauthorized",
+      handleUnauthorized
+    );
+
+    return () => {
+      window.removeEventListener(
+        "zenora:unauthorized",
+        handleUnauthorized
+      );
+    };
   }, []);
 
-  const login = (email) => {
-    const guestUser = {
-      id: 1,
-      firstName: "Guest",
-      lastName: "User",
-      email,
-      role: "Guest",
-    };
+  async function login(
+    emailOrData,
+    passwordArg
+  ) {
+    let email;
+    let password;
 
-    setUser(guestUser);
+    if (
+      typeof emailOrData === "object"
+    ) {
+      email = emailOrData.email;
+      password =
+        emailOrData.password;
+    } else {
+      email = emailOrData;
+      password = passwordArg;
+    }
 
-    localStorage.setItem(
-      "zenoraUser",
-      JSON.stringify(guestUser)
+    if (!email || !password) {
+      throw new Error(
+        "Email and password are required."
+      );
+    }
+
+    const data = await api(
+      "/auth/login",
+      {
+        method: "POST",
+
+        body: {
+          email: email.trim(),
+          password,
+        },
+      }
     );
 
-    return guestUser;
-  };
+    if (!data?.token) {
+      throw new Error(
+        "The server did not return a login token."
+      );
+    }
 
-  const register = (formData) => {
-    const guestUser = {
-      id: Date.now(),
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      email: formData.email,
-      phone: formData.phone,
-      role: "Guest",
-    };
+    if (!data?.user) {
+      throw new Error(
+        "The server did not return user information."
+      );
+    }
 
-    setUser(guestUser);
+    setToken(data.token);
+    saveUser(data.user);
 
-    localStorage.setItem(
-      "zenoraUser",
-      JSON.stringify(guestUser)
+    return normalizeUser(
+      data.user
+    );
+  }
+
+  async function register(
+    formData
+  ) {
+    if (
+      !formData.firstName ||
+      !formData.lastName ||
+      !formData.email ||
+      !formData.password
+    ) {
+      throw new Error(
+        "Please complete all required fields."
+      );
+    }
+
+    const data = await api(
+      "/auth/register",
+      {
+        method: "POST",
+
+        body: {
+          firstName:
+            formData.firstName.trim(),
+
+          lastName:
+            formData.lastName.trim(),
+
+          email:
+            formData.email
+              .trim()
+              .toLowerCase(),
+
+          phone:
+            formData.phone?.trim() ||
+            null,
+
+          password:
+            formData.password,
+        },
+      }
     );
 
-    return guestUser;
-  };
+    if (!data?.token) {
+      throw new Error(
+        "The server did not return a registration token."
+      );
+    }
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("zenoraUser");
-  };
+    if (!data?.user) {
+      throw new Error(
+        "The server did not return user information."
+      );
+    }
+
+    setToken(data.token);
+    saveUser(data.user);
+
+    return normalizeUser(
+      data.user
+    );
+  }
+
+  function logout() {
+    setToken(null);
+    saveUser(null);
+  }
 
   const value = {
     user,
-    isLoggedIn: Boolean(user),
+
+    authLoading,
+
+    isLoggedIn:
+      Boolean(user),
+
+    isAuthenticated:
+      Boolean(user),
+
     login,
     register,
     logout,
+
+    signIn: login,
+    signUp: register,
+    signOut: logout,
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={value}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
 function useAuth() {
-  const context = useContext(AuthContext);
+  const context =
+    useContext(AuthContext);
 
   if (!context) {
     throw new Error(

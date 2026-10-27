@@ -1,47 +1,102 @@
-const db = require("../database/db");
+const db = require("../database/postgres");
 const config = require("../config");
 const time = require("../lib/time");
 const appointments = require("./appointments");
-const { notifyClient } = require("../lib/notify");
-const { describe } = require("./guest");
+const {
+  notifyClient,
+} = require("../lib/notify");
+const {
+  describe,
+} = require("./guest");
 
 /**
- * Sends one reminder for each confirmed appointment that starts within the
- * next `reminderHoursBefore` hours. Safe to call repeatedly.
+ * Sends one reminder for each confirmed appointment
+ * that starts within the next reminderHoursBefore hours.
+ * Safe to call repeatedly.
  */
-function sendDueReminders() {
-  const now = time.nowInSpa();
-  const nowMinutes = time.toMinutes(now.time);
+async function sendDueReminders() {
+  const now =
+    time.nowInSpa();
 
-  const candidates = db
-    .prepare(
-      `SELECT id FROM appointments
-       WHERE status = 'confirmed'
-         AND reminder_sent_at IS NULL
-         AND check_in_at IS NULL
-         AND appointment_date BETWEEN ? AND ?`
-    )
-    .all(now.date, time.addDays(now.date, 2));
+  const nowMinutes =
+    time.toMinutes(
+      now.time
+    );
+
+  const result =
+    await db.query(
+      `
+      SELECT id
+      FROM appointments
+      WHERE status = 'confirmed'
+        AND reminder_sent_at IS NULL
+        AND check_in_at IS NULL
+        AND appointment_date BETWEEN $1 AND $2
+      `,
+      [
+        now.date,
+        time.addDays(
+          now.date,
+          2
+        ),
+      ]
+    );
 
   let sent = 0;
 
-  for (const { id } of candidates) {
-    const appointment = appointments.getById(id);
+  for (
+    const { id }
+    of result.rows
+  ) {
+    const appointment =
+      await appointments.getById(
+        id
+      );
 
-    const minutesAway =
-      time.daysBetween(now.date, appointment.appointment_date) * 1440 +
-      time.toMinutes(appointment.start_time) -
-      nowMinutes;
-
-    if (minutesAway < 0 || minutesAway > config.reminderHoursBefore * 60) {
+    if (!appointment) {
       continue;
     }
 
-    const client = db
-      .prepare("SELECT * FROM clients WHERE id = ?")
-      .get(appointment.client_id);
+    const minutesAway =
+      time.daysBetween(
+        now.date,
+        appointment.appointment_date
+      ) *
+        1440 +
+      time.toMinutes(
+        appointment.start_time
+      ) -
+      nowMinutes;
 
-    notifyClient(
+    if (
+      minutesAway < 0 ||
+      minutesAway >
+        config.reminderHoursBefore *
+          60
+    ) {
+      continue;
+    }
+
+    const clientResult =
+      await db.query(
+        `
+        SELECT *
+        FROM clients
+        WHERE id = $1
+        `,
+        [
+          appointment.client_id,
+        ]
+      );
+
+    const client =
+      clientResult.rows[0];
+
+    if (!client) {
+      continue;
+    }
+
+    await notifyClient(
       client,
       "reminder",
       "Appointment reminder",
@@ -49,9 +104,17 @@ function sendDueReminders() {
         `Need to change it? Log in and reschedule from My Account.`
     );
 
-    db.prepare(
-      "UPDATE appointments SET reminder_sent_at = datetime('now') WHERE id = ?"
-    ).run(id);
+    await db.query(
+      `
+      UPDATE appointments
+      SET reminder_sent_at = to_char(
+        CURRENT_TIMESTAMP,
+        'YYYY-MM-DD HH24:MI:SS'
+      )
+      WHERE id = $1
+      `,
+      [id]
+    );
 
     sent++;
   }
@@ -60,18 +123,39 @@ function sendDueReminders() {
 }
 
 function startReminderScheduler() {
-  const run = () => {
+  const run = async () => {
     try {
-      const sent = sendDueReminders();
-      if (sent) console.log(`[reminders] sent ${sent} reminder(s)`);
+      const sent =
+        await sendDueReminders();
+
+      if (sent) {
+        console.log(
+          `[reminders] sent ${sent} reminder(s)`
+        );
+      }
     } catch (error) {
-      console.error("[reminders] failed:", error.message);
+      console.error(
+        "[reminders] failed:",
+        error.message
+      );
     }
   };
 
-  run();
+  // Run once immediately.
+  void run();
 
-  return setInterval(run, config.reminderCheckMinutes * 60 * 1000);
+  // Then run at the configured interval.
+  return setInterval(
+    () => {
+      void run();
+    },
+    config.reminderCheckMinutes *
+      60 *
+      1000
+  );
 }
 
-module.exports = { sendDueReminders, startReminderScheduler };
+module.exports = {
+  sendDueReminders,
+  startReminderScheduler,
+};

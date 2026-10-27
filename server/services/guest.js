@@ -1,43 +1,101 @@
-const db = require("../database/db");
+const db = require("../database/postgres");
 const availability = require("./availability");
 const appointments = require("./appointments");
 const { notFound, conflict } = require("../lib/errors");
-const { notifyRole, notifyClient, logActivity } = require("../lib/notify");
+const {
+  notifyRole,
+  notifyClient,
+  logActivity,
+} = require("../lib/notify");
 const v = require("../lib/validate");
 
-/** The client record that belongs to a logged-in guest (created on demand). */
-function clientForUser(user) {
-  let client = db
-    .prepare("SELECT * FROM clients WHERE user_id = ?")
-    .get(user.id);
+/**
+ * The client record that belongs to a logged-in guest.
+ * Creates one on demand if it does not exist yet.
+ */
+async function clientForUser(user, queryable = db) {
+  let result = await queryable.query(
+    `
+    SELECT *
+    FROM clients
+    WHERE user_id = $1
+    `,
+    [user.id]
+  );
 
-  if (!client) {
-    const info = db
-      .prepare(
-        `INSERT INTO clients (user_id, first_name, last_name, email, phone)
-         VALUES (?, ?, ?, ?, ?)`
-      )
-      .run(user.id, user.first_name, user.last_name, user.email, user.phone ?? null);
-
-    client = db
-      .prepare("SELECT * FROM clients WHERE id = ?")
-      .get(info.lastInsertRowid);
+  if (result.rows[0]) {
+    return result.rows[0];
   }
 
-  return client;
+  const inserted = await queryable.query(
+    `
+    INSERT INTO clients (
+      user_id,
+      first_name,
+      last_name,
+      email,
+      phone
+    )
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (user_id) DO NOTHING
+    RETURNING *
+    `,
+    [
+      user.id,
+      user.first_name,
+      user.last_name,
+      user.email,
+      user.phone ?? null,
+    ]
+  );
+
+  if (inserted.rows[0]) {
+    return inserted.rows[0];
+  }
+
+  // Another request may have created it at the same time.
+  result = await queryable.query(
+    `
+    SELECT *
+    FROM clients
+    WHERE user_id = $1
+    `,
+    [user.id]
+  );
+
+  return result.rows[0];
 }
 
-/** Runs `fn` atomically; turns a slot-index violation into a friendly 409. */
-function atomically(fn) {
+/**
+ * Runs fn inside a PostgreSQL transaction.
+ * Converts a slot unique-constraint violation into a friendly 409.
+ *
+ * fn receives the PostgreSQL transaction client.
+ */
+async function atomically(fn) {
+  const client = await db.connect();
+
   try {
-    return db.transaction(fn)();
+    await client.query("BEGIN");
+
+    const result = await fn(client);
+
+    await client.query("COMMIT");
+
+    return result;
   } catch (error) {
-    if (String(error.code || "").startsWith("SQLITE_CONSTRAINT")) {
+    await client.query("ROLLBACK");
+
+    // PostgreSQL unique_violation
+    if (error.code === "23505") {
       throw conflict(
         "That time was just taken by someone else. Please pick another time."
       );
     }
+
     throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -47,49 +105,92 @@ function describe(a) {
 
 /* ---------- Book ---------- */
 
-function book(user, body) {
-  const serviceId = v.id(body.serviceId, "Service");
-  const therapistId = v.optionalId(body.therapistId, "Therapist");
-  const specialRequest = v.text(body.specialRequest, "Special request", {
-    required: false,
-    max: 500,
-  });
+async function book(user, body) {
+  const serviceId = v.id(
+    body.serviceId,
+    "Service"
+  );
 
-  const client = clientForUser(user);
+  const therapistId = v.optionalId(
+    body.therapistId,
+    "Therapist"
+  );
 
-  const id = atomically(() => {
-    const slot = availability.resolveBooking({
-      serviceId,
-      therapistId,
-      date: body.date,
-      start: body.start,
-      clientId: client.id,
-    });
+  const specialRequest = v.text(
+    body.specialRequest,
+    "Special request",
+    {
+      required: false,
+      max: 500,
+    }
+  );
 
-    return db
-      .prepare(
-        `INSERT INTO appointments
-           (client_id, service_id, therapist_id, appointment_date,
-            start_time, end_time, status, booking_source,
-            special_request, amount_due, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', 'online', ?, ?, ?)`
-      )
-      .run(
-        client.id,
-        serviceId,
-        slot.therapistId,
-        body.date,
-        slot.start,
-        slot.end,
-        specialRequest,
-        slot.service.price,
-        user.id
-      ).lastInsertRowid;
-  });
+  const client = await clientForUser(user);
 
-  const appointment = appointments.mustGet(id);
+  const id = await atomically(
+    async (transaction) => {
+      const slot =
+        await availability.resolveBooking({
+          serviceId,
+          therapistId,
+          date: body.date,
+          start: body.start,
+          clientId: client.id,
+          queryable: transaction,
+        });
 
-  notifyClient(
+      const result =
+        await transaction.query(
+          `
+          INSERT INTO appointments (
+            client_id,
+            service_id,
+            therapist_id,
+            appointment_date,
+            start_time,
+            end_time,
+            status,
+            booking_source,
+            special_request,
+            amount_due,
+            created_by
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            'pending',
+            'online',
+            $7,
+            $8,
+            $9
+          )
+          RETURNING id
+          `,
+          [
+            client.id,
+            serviceId,
+            slot.therapistId,
+            body.date,
+            slot.start,
+            slot.end,
+            specialRequest,
+            slot.service.price,
+            user.id,
+          ]
+        );
+
+      return result.rows[0].id;
+    }
+  );
+
+  const appointment =
+    await appointments.mustGet(id);
+
+  await notifyClient(
     client,
     "booking_received",
     "Booking request received",
@@ -97,48 +198,74 @@ function book(user, body) {
       `The front desk will confirm it shortly.`
   );
 
-  notifyRole(
+  await notifyRole(
     "Receptionist",
     "booking_request",
     "New online booking request",
     `${appointment.client_name} requested ${describe(appointment)}.`
   );
 
-  logActivity(user.id, "booking.create", "appointment", id, describe(appointment));
+  await logActivity(
+    user.id,
+    "booking.create",
+    "appointment",
+    id,
+    describe(appointment)
+  );
 
   return appointment;
 }
 
 /* ---------- View ---------- */
 
-function listMine(user) {
-  const client = clientForUser(user);
+async function listMine(user) {
+  const client =
+    await clientForUser(user);
 
-  const all = appointments.list(
-    "WHERE a.client_id = ?",
-    [client.id],
-    "a.appointment_date DESC, a.start_time DESC"
-  );
+  const all =
+    await appointments.list(
+      "WHERE a.client_id = $1",
+      [client.id],
+      "a.appointment_date DESC, a.start_time DESC"
+    );
 
   return {
     upcoming: all
-      .filter((a) => a.is_upcoming)
+      .filter(
+        (appointment) =>
+          appointment.is_upcoming
+      )
       .sort((a, b) =>
         `${a.appointment_date} ${a.start_time}`.localeCompare(
           `${b.appointment_date} ${b.start_time}`
         )
       ),
-    history: all.filter((a) => !a.is_upcoming),
+
+    history: all.filter(
+      (appointment) =>
+        !appointment.is_upcoming
+    ),
   };
 }
 
-function ownedAppointment(user, id) {
-  const client = clientForUser(user);
-  const appointment = appointments.mustGet(id);
+async function ownedAppointment(
+  user,
+  id
+) {
+  const client =
+    await clientForUser(user);
+
+  const appointment =
+    await appointments.mustGet(id);
 
   // Same message for "not yours" and "does not exist".
-  if (appointment.client_id !== client.id) {
-    throw notFound("Appointment not found.");
+  if (
+    appointment.client_id !==
+    client.id
+  ) {
+    throw notFound(
+      "Appointment not found."
+    );
   }
 
   return appointment;
@@ -146,41 +273,94 @@ function ownedAppointment(user, id) {
 
 /* ---------- Reschedule ---------- */
 
-function reschedule(user, id, body) {
-  const current = ownedAppointment(user, id);
+async function reschedule(
+  user,
+  id,
+  body
+) {
+  const current =
+    await ownedAppointment(
+      user,
+      id
+    );
 
   if (!current.can_modify) {
-    throw conflict("This appointment can no longer be rescheduled.");
+    throw conflict(
+      "This appointment can no longer be rescheduled."
+    );
   }
 
-  const therapistId = v.optionalId(body.therapistId, "Therapist");
+  const therapistId =
+    v.optionalId(
+      body.therapistId,
+      "Therapist"
+    );
 
-  atomically(() => {
-    const slot = availability.resolveBooking({
-      serviceId: current.service_id,
-      therapistId,
-      date: body.date,
-      start: body.start,
-      clientId: current.client_id,
-      excludeAppointmentId: current.id,
-      // Keep the same therapist whenever they are free.
-      preferTherapistIds: [current.therapist_id],
-    });
+  await atomically(
+    async (transaction) => {
+      const slot =
+        await availability.resolveBooking({
+          serviceId:
+            current.service_id,
 
-    db.prepare(
-      `UPDATE appointments
-       SET appointment_date = ?, start_time = ?, end_time = ?,
-           therapist_id = ?,
-           status = 'pending',
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    ).run(body.date, slot.start, slot.end, slot.therapistId, current.id);
-  });
+          therapistId,
 
-  const updated = appointments.mustGet(current.id);
-  const client = clientForUser(user);
+          date:
+            body.date,
 
-  notifyClient(
+          start:
+            body.start,
+
+          clientId:
+            current.client_id,
+
+          excludeAppointmentId:
+            current.id,
+
+          // Keep the same therapist whenever they are free.
+          preferTherapistIds: [
+            current.therapist_id,
+          ],
+
+          queryable:
+            transaction,
+        });
+
+      await transaction.query(
+        `
+        UPDATE appointments
+        SET
+          appointment_date = $1,
+          start_time = $2,
+          end_time = $3,
+          therapist_id = $4,
+          status = 'pending',
+          updated_at = to_char(
+            CURRENT_TIMESTAMP,
+            'YYYY-MM-DD HH24:MI:SS'
+          )
+        WHERE id = $5
+        `,
+        [
+          body.date,
+          slot.start,
+          slot.end,
+          slot.therapistId,
+          current.id,
+        ]
+      );
+    }
+  );
+
+  const updated =
+    await appointments.mustGet(
+      current.id
+    );
+
+  const client =
+    await clientForUser(user);
+
+  await notifyClient(
     client,
     "booking_rescheduled",
     "Reschedule request received",
@@ -188,106 +368,208 @@ function reschedule(user, id, body) {
       `It is awaiting confirmation from the front desk.`
   );
 
-  notifyRole(
+  await notifyRole(
     "Receptionist",
     "booking_request",
     "Booking rescheduled by guest",
     `${updated.client_name} moved a booking to ${describe(updated)}. Please re-confirm it.`
   );
 
-  logActivity(user.id, "booking.reschedule", "appointment", current.id, describe(updated));
+  await logActivity(
+    user.id,
+    "booking.reschedule",
+    "appointment",
+    current.id,
+    describe(updated)
+  );
 
   return updated;
 }
 
-/** Open times for moving one of my bookings (ignores the booking itself). */
-function slotsForReschedule(user, id, date, therapistId) {
-  const current = ownedAppointment(user, id);
+/**
+ * Open times for moving one of my bookings
+ * (ignores the booking itself).
+ */
+async function slotsForReschedule(
+  user,
+  id,
+  date,
+  therapistId
+) {
+  const current =
+    await ownedAppointment(
+      user,
+      id
+    );
 
-  const result = availability.getSlots({
-    serviceId: current.service_id,
+  return availability.getSlots({
+    serviceId:
+      current.service_id,
+
     therapistId,
-    date,
-    excludeAppointmentId: current.id,
-  });
 
-  return result;
+    date,
+
+    excludeAppointmentId:
+      current.id,
+  });
 }
 
 /* ---------- Cancel ---------- */
 
-function cancel(user, id, body = {}) {
-  const current = ownedAppointment(user, id);
+async function cancel(
+  user,
+  id,
+  body = {}
+) {
+  const current =
+    await ownedAppointment(
+      user,
+      id
+    );
 
   if (!current.can_modify) {
-    throw conflict("This appointment can no longer be cancelled.");
+    throw conflict(
+      "This appointment can no longer be cancelled."
+    );
   }
 
-  const reason = v.text(body.reason, "Reason", { required: false, max: 200 });
+  const reason = v.text(
+    body.reason,
+    "Reason",
+    {
+      required: false,
+      max: 200,
+    }
+  );
 
-  db.prepare(
-    `UPDATE appointments
-     SET status = 'cancelled', cancel_reason = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`
-  ).run(reason ? `Cancelled by guest: ${reason}` : "Cancelled by guest", current.id);
+  await db.query(
+    `
+    UPDATE appointments
+    SET
+      status = 'cancelled',
+      cancel_reason = $1,
+      updated_at = to_char(
+        CURRENT_TIMESTAMP,
+        'YYYY-MM-DD HH24:MI:SS'
+      )
+    WHERE id = $2
+    `,
+    [
+      reason
+        ? `Cancelled by guest: ${reason}`
+        : "Cancelled by guest",
 
-  const updated = appointments.mustGet(current.id);
+      current.id,
+    ]
+  );
 
-  notifyClient(
-    clientForUser(user),
+  const updated =
+    await appointments.mustGet(
+      current.id
+    );
+
+  await notifyClient(
+    await clientForUser(user),
     "booking_cancelled",
     "Booking cancelled",
     `Your booking for ${describe(updated)} has been cancelled.`
   );
 
-  notifyRole(
+  await notifyRole(
     "Receptionist",
     "booking_cancelled",
     "Booking cancelled by guest",
     `${updated.client_name} cancelled ${describe(updated)}.`
   );
 
-  logActivity(user.id, "booking.cancel", "appointment", current.id, describe(updated));
+  await logActivity(
+    user.id,
+    "booking.cancel",
+    "appointment",
+    current.id,
+    describe(updated)
+  );
 
   return updated;
 }
 
 /* ---------- Notifications ---------- */
 
-function listNotifications(user) {
-  const items = db
-    .prepare(
-      `SELECT id, type, title, message, is_read, created_at
-       FROM notifications
-       WHERE user_id = ?
-       ORDER BY id DESC
-       LIMIT 50`
-    )
-    .all(user.id);
+async function listNotifications(
+  user
+) {
+  const itemsResult =
+    await db.query(
+      `
+      SELECT
+        id,
+        type,
+        title,
+        message,
+        is_read,
+        created_at
+      FROM notifications
+      WHERE user_id = $1
+      ORDER BY id DESC
+      LIMIT 50
+      `,
+      [user.id]
+    );
 
-  const unread = db
-    .prepare(
-      "SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND is_read = 0"
-    )
-    .get(user.id).n;
+  const unreadResult =
+    await db.query(
+      `
+      SELECT COUNT(*)::INTEGER AS n
+      FROM notifications
+      WHERE user_id = $1
+        AND is_read = 0
+      `,
+      [user.id]
+    );
 
-  return { items, unread };
+  return {
+    items: itemsResult.rows,
+    unread:
+      unreadResult.rows[0].n,
+  };
 }
 
-function markRead(user, id) {
-  const result = db
-    .prepare(
-      "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?"
-    )
-    .run(id, user.id);
+async function markRead(
+  user,
+  id
+) {
+  const result =
+    await db.query(
+      `
+      UPDATE notifications
+      SET is_read = 1
+      WHERE id = $1
+        AND user_id = $2
+      `,
+      [
+        id,
+        user.id,
+      ]
+    );
 
-  if (result.changes === 0) throw notFound("Notification not found.");
+  if (result.rowCount === 0) {
+    throw notFound(
+      "Notification not found."
+    );
+  }
 }
 
-function markAllRead(user) {
-  db.prepare(
-    "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0"
-  ).run(user.id);
+async function markAllRead(user) {
+  await db.query(
+    `
+    UPDATE notifications
+    SET is_read = 1
+    WHERE user_id = $1
+      AND is_read = 0
+    `,
+    [user.id]
+  );
 }
 
 module.exports = {

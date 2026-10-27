@@ -1,33 +1,103 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+} from "react-router-dom";
+
+import { useAuth } from "../context/AuthContext";
+
+function destinationForRole(role) {
+  switch (String(role || "").toLowerCase()) {
+    case "spa manager":
+    case "manager":
+      return "/manager/dashboard";
+
+    case "receptionist":
+      return "/receptionist/dashboard";
+
+    case "massage therapist":
+      return "/therapist/dashboard";
+
+    case "guest":
+    default:
+      return "/guest/dashboard";
+  }
+}
 
 function Login() {
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const navigate = useNavigate();
 
-  const [message, setMessage] = useState("");
+  const { login } = useAuth();
+
+  const [formData, setFormData] =
+    useState({
+      email: "",
+      password: "",
+    });
+
+  const [error, setError] =
+    useState("");
+
+  const [busy, setBusy] =
+    useState(false);
 
   const handleChange = (event) => {
-    const { name, value } = event.target;
+    const { name, value } =
+      event.target;
 
     setFormData((current) => ({
       ...current,
       [name]: value,
     }));
 
-    setMessage("");
+    setError("");
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
-    console.log("Login:", formData);
+    if (busy) {
+      return;
+    }
 
-    setMessage(
-      "Login form is ready. Authentication will be connected later."
-    );
+    const email =
+      formData.email.trim();
+
+    const password =
+      formData.password;
+
+    if (!email || !password) {
+      setError(
+        "Please enter your email and password."
+      );
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const user = await login(
+        email,
+        password
+      );
+
+      navigate(
+        destinationForRole(
+          user?.role
+        ),
+        {
+          replace: true,
+        }
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
+          "Unable to log in. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -35,7 +105,9 @@ function Login() {
       {/* Header */}
       <div
         className="jumbotron jumbotron-fluid bg-jumbotron"
-        style={{ marginBottom: "90px" }}
+        style={{
+          marginBottom: "90px",
+        }}
       >
         <div className="container text-center py-5">
           <h3 className="text-white display-3 mb-4">
@@ -44,7 +116,10 @@ function Login() {
 
           <div className="d-inline-flex align-items-center text-white">
             <p className="m-0">
-              <Link className="text-white" to="/">
+              <Link
+                className="text-white"
+                to="/"
+              >
                 Home
               </Link>
             </p>
@@ -66,7 +141,7 @@ function Login() {
               <div className="bg-light p-4 p-md-5">
                 <div className="text-center mb-4">
                   <h6 className="d-inline-block bg-white text-primary text-uppercase py-1 px-2">
-                    Guest Login
+                    Account Login
                   </h6>
 
                   <h1 className="mb-3">
@@ -74,11 +149,16 @@ function Login() {
                   </h1>
 
                   <p className="mb-0">
-                    Sign in to manage your appointments.
+                    Sign in to access your
+                    Zenora account.
                   </p>
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                <form
+                  onSubmit={
+                    handleSubmit
+                  }
+                >
                   <div className="form-group">
                     <label htmlFor="login-email">
                       Email Address
@@ -88,10 +168,16 @@ function Login() {
                       id="login-email"
                       type="email"
                       name="email"
-                      value={formData.email}
-                      onChange={handleChange}
+                      value={
+                        formData.email
+                      }
+                      onChange={
+                        handleChange
+                      }
                       className="form-control p-4"
                       placeholder="Enter your email"
+                      autoComplete="email"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -105,51 +191,41 @@ function Login() {
                       id="login-password"
                       type="password"
                       name="password"
-                      value={formData.password}
-                      onChange={handleChange}
+                      value={
+                        formData.password
+                      }
+                      onChange={
+                        handleChange
+                      }
                       className="form-control p-4"
                       placeholder="Enter your password"
+                      autoComplete="current-password"
+                      disabled={busy}
                       required
                     />
                   </div>
 
-                  <div className="d-flex justify-content-between align-items-center mb-4">
-                    <div className="form-check">
-                      <input
-                        id="remember-me"
-                        type="checkbox"
-                        className="form-check-input"
-                      />
-
-                      <label
-                        className="form-check-label"
-                        htmlFor="remember-me"
-                      >
-                        Remember me
-                      </label>
+                  {error && (
+                    <div className="alert alert-danger">
+                      {error}
                     </div>
-
-                    <a href="#forgot-password">
-                      Forgot Password?
-                    </a>
-                  </div>
+                  )}
 
                   <button
                     type="submit"
                     className="btn btn-primary btn-block py-3"
+                    disabled={busy}
                   >
-                    Login
+                    {busy
+                      ? "Signing In..."
+                      : "Login"}
                   </button>
-
-                  {message && (
-                    <p className="text-success text-center mt-3 mb-0">
-                      {message}
-                    </p>
-                  )}
                 </form>
 
                 <p className="text-center mt-4 mb-0">
-                  Don't have an account?{" "}
+                  Don't have an
+                  account?{" "}
+
                   <Link to="/register">
                     Register here
                   </Link>

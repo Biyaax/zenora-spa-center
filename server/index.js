@@ -4,49 +4,144 @@ const express = require("express");
 const cors = require("cors");
 
 const config = require("./config");
-const db = require("./database/db");
+const db = require("./database/postgres");
 const { HttpError } = require("./lib/errors");
 const { startReminderScheduler } = require("./services/reminders");
 const { requireAuth, requireRole } = require("./middleware/auth");
+
 const therapistRoutes = require("./routes/therapistRoutes");
 const managerRoutes = require("./routes/managerRoutes");
 
 const app = express();
 
-app.use(cors({ origin: config.clientUrl }));
+/* =========================
+   CORS
+========================= */
+
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  "https://zenora-spa-center.vercel.app",
+]);
+
+// Keep supporting CLIENT_URL from Vercel/environment variables.
+if (config.clientUrl) {
+  allowedOrigins.add(
+    String(config.clientUrl).replace(/\/$/, "")
+  );
+}
+
+function isAllowedOrigin(origin) {
+  // Requests such as server-to-server calls may not have an Origin.
+  if (!origin) {
+    return true;
+  }
+
+  // Explicitly allowed URLs.
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+
+    /*
+     * Allow Zenora frontend Preview deployments such as:
+     *
+     * https://zenora-spa-center-nphq0qrfn-biyaaxs-projects.vercel.app
+     * https://zenora-spa-center-rcmmrig73-biyaaxs-projects.vercel.app
+     *
+     * This prevents us from changing CLIENT_URL every time
+     * Vercel creates a new Preview deployment.
+     */
+    const isZenoraPreview =
+      url.protocol === "https:" &&
+      url.hostname.endsWith(
+        "-biyaaxs-projects.vercel.app"
+      ) &&
+      url.hostname.startsWith(
+        "zenora-spa-center-"
+      );
+
+    return isZenoraPreview;
+  } catch {
+    return false;
+  }
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn(
+        `Blocked CORS origin: ${origin}`
+      );
+
+      return callback(
+        new Error("Not allowed by CORS")
+      );
+    },
+  })
+);
+
 app.use(express.json({ limit: "100kb" }));
 
-/* Health check */
-app.get("/api/health", (req, res) => {
-  const serviceCount = db.prepare("SELECT COUNT(*) AS count FROM services").get();
-  const roleCount = db.prepare("SELECT COUNT(*) AS count FROM roles").get();
+/* =========================
+   HEALTH CHECK
+========================= */
+
+app.get("/api/health", async (req, res) => {
+  const serviceResult = await db.query(`
+    SELECT COUNT(*)::INTEGER AS count
+    FROM services
+  `);
+
+  const roleResult = await db.query(`
+    SELECT COUNT(*)::INTEGER AS count
+    FROM roles
+  `);
 
   res.json({
     success: true,
     message: "Zenora API is running.",
     database: "connected",
-    services: serviceCount.count,
-    roles: roleCount.count,
+    services: serviceResult.rows[0].count,
+    roles: roleResult.rows[0].count,
   });
 });
 
-/* Existing shared API routes: keep these during the integration. */
+/* =========================
+   SHARED ROUTES
+========================= */
+
+// Public: services, packages, therapists, hours, availability
 app.use("/api", require("./routes/catalog"));
 
-// One login/current-user endpoint for every role. Do NOT mount authRoutes
-// here as well: it also declares /login and /me and uses a separate JWT flow.
+// Register / login / current user for all roles
 app.use("/api/auth", require("./routes/auth"));
 
+// Guest
 app.use("/api/me", require("./routes/guest"));
+
+// Receptionist
 app.use("/api/reception", require("./routes/reception"));
 
-/* Teammate's Therapist and Manager API routes. */
+/* =========================
+   THERAPIST
+========================= */
+
 app.use(
   "/api/therapist",
   requireAuth,
   requireRole("Massage Therapist"),
   therapistRoutes
 );
+
+/* =========================
+   MANAGER
+========================= */
 
 app.use(
   "/api/manager",
@@ -55,11 +150,21 @@ app.use(
   managerRoutes
 );
 
+/* =========================
+   404
+========================= */
+
 app.use("/api", (req, res) => {
-  res.status(404).json({ success: false, message: "Not found." });
+  res.status(404).json({
+    success: false,
+    message: "Not found.",
+  });
 });
 
-/* Shared API error handler */
+/* =========================
+   ERRORS
+========================= */
+
 // eslint-disable-next-line no-unused-vars
 app.use((error, req, res, next) => {
   if (error instanceof HttpError) {
@@ -77,14 +182,36 @@ app.use((error, req, res, next) => {
     });
   }
 
+  if (error.message === "Not allowed by CORS") {
+    return res.status(403).json({
+      success: false,
+      message: "This website is not allowed to access the Zenora API.",
+    });
+  }
+
   console.error(error);
+
   return res.status(500).json({
     success: false,
-    message: "Something went wrong on our side. Please try again.",
+    message:
+      "Something went wrong on our side. Please try again.",
   });
 });
 
-app.listen(config.port, () => {
-  console.log(`Zenora server running on http://localhost:${config.port}`);
-  startReminderScheduler();
-});
+/* =========================
+   LOCAL SERVER
+========================= */
+
+if (require.main === module) {
+  app.listen(config.port, () => {
+    console.log(
+      `Zenora server running on http://localhost:${config.port}`
+    );
+
+    // Local development only.
+    // Vercel should not rely on a persistent setInterval scheduler.
+    startReminderScheduler();
+  });
+}
+
+module.exports = app;
