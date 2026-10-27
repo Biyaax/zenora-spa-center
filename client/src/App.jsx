@@ -31,15 +31,24 @@ import WalkInBooking from "./pages/receptionist/WalkInBooking";
 import Payments from "./pages/receptionist/Payments";
 import Clients from "./pages/receptionist/Clients";
 
+import TherapistPortal from "./pages/therapist/TherapistPortal";
+
 function App() {
   const location = useLocation();
 
-  const isReceptionistPage =
-    location.pathname.startsWith("/receptionist");
+  const isStaffPage = [
+    "/receptionist",
+    "/therapist",
+    "/manager",
+  ].some(
+    (prefix) =>
+      location.pathname === prefix ||
+      location.pathname.startsWith(prefix + "/")
+  );
 
   return (
     <>
-      {!isReceptionistPage && (
+      {!isStaffPage && (
         <>
           <Topbar />
           <Navbar />
@@ -53,16 +62,10 @@ function App() {
           <Route path="/about" element={<About />} />
           <Route path="/services" element={<Services />} />
           <Route path="/pricing" element={<Pricing />} />
-          <Route
-            path="/appointment"
-            element={<Appointment />}
-          />
+          <Route path="/appointment" element={<Appointment />} />
           <Route path="/opening" element={<Opening />} />
           <Route path="/team" element={<Team />} />
-          <Route
-            path="/testimonial"
-            element={<Testimonial />}
-          />
+          <Route path="/testimonial" element={<Testimonial />} />
           <Route path="/contact" element={<Contact />} />
 
           {/* Guest Pages */}
@@ -117,10 +120,40 @@ function App() {
             element={<Clients />}
           />
 
+          {/* Massage Therapist Pages */}
+          <Route
+            path="/therapist/dashboard"
+            element={<TherapistPortal />}
+          />
+
+          <Route
+            path="/therapist/schedule"
+            element={<TherapistPortal />}
+          />
+
+          <Route
+            path="/therapist/appointments"
+            element={<TherapistPortal />}
+          />
+
+          <Route
+            path="/therapist/notes"
+            element={<TherapistPortal />}
+          />
+
+          <Route
+            path="/therapist/availability"
+            element={<TherapistPortal />}
+          />
+
+          <Route
+            path="/therapist/profile"
+            element={<TherapistPortal />}
+          />
         </Routes>
       </main>
 
-      {!isReceptionistPage && (
+      {!isStaffPage && (
         <>
           <Footer />
           <BackToTop />
