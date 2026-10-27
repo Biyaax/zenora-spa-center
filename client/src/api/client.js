@@ -1,7 +1,11 @@
 const TOKEN_KEY = "zenora_token";
 
+const FALLBACK_API_BASE =
+  "https://zenora-spa-api-git-bea-supabase-migration-biyaaxs-projects.vercel.app";
+
 const API_BASE = (
-  import.meta.env.VITE_API_URL || ""
+  import.meta.env.VITE_API_URL ||
+  FALLBACK_API_BASE
 ).replace(/\/$/, "");
 
 export const getToken = () =>
@@ -33,8 +37,7 @@ export async function api(
   } = {}
 ) {
   const url = new URL(
-    `${API_BASE}/api${path}`,
-    window.location.origin
+    `${API_BASE}/api${path}`
   );
 
   if (query) {
@@ -44,7 +47,10 @@ export async function api(
         value !== null &&
         value !== ""
       ) {
-        url.searchParams.set(key, String(value));
+        url.searchParams.set(
+          key,
+          String(value)
+        );
       }
     }
   }
@@ -53,24 +59,29 @@ export async function api(
   const token = getToken();
 
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
+    headers.Authorization =
+      `Bearer ${token}`;
   }
 
   if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
+    headers["Content-Type"] =
+      "application/json";
   }
 
   let response;
 
   try {
-    response = await fetch(url.toString(), {
-      method,
-      headers,
-      body:
-        body !== undefined
-          ? JSON.stringify(body)
-          : undefined,
-    });
+    response = await fetch(
+      url.toString(),
+      {
+        method,
+        headers,
+        body:
+          body !== undefined
+            ? JSON.stringify(body)
+            : undefined,
+      }
+    );
   } catch {
     throw new ApiError(
       "Cannot reach the server. Please check your connection.",
@@ -87,9 +98,14 @@ export async function api(
   }
 
   if (!response.ok) {
-    if (response.status === 401 && token) {
+    if (
+      response.status === 401 &&
+      token
+    ) {
       window.dispatchEvent(
-        new Event("zenora:unauthorized")
+        new Event(
+          "zenora:unauthorized"
+        )
       );
     }
 
