@@ -1,7 +1,16 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+} from "react-router-dom";
+
+import { useAuth } from "../context/AuthContext";
 
 function Register() {
+  const navigate = useNavigate();
+
+  const { register } = useAuth();
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -11,8 +20,8 @@ function Register() {
     confirmPassword: "",
   });
 
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -22,25 +31,69 @@ function Register() {
       [name]: value,
     }));
 
-    setMessage("");
     setError("");
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
+    if (busy) {
       return;
     }
 
-    console.log("Registration:", formData);
+    const cleanedData = {
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
+      password: formData.password,
+      confirmPassword: formData.confirmPassword,
+    };
 
+    if (
+      !cleanedData.firstName ||
+      !cleanedData.lastName ||
+      !cleanedData.email ||
+      !cleanedData.phone ||
+      !cleanedData.password ||
+      !cleanedData.confirmPassword
+    ) {
+      setError(
+        "Please complete all required fields."
+      );
+      return;
+    }
+
+    if (
+      cleanedData.password !==
+      cleanedData.confirmPassword
+    ) {
+      setError(
+        "Passwords do not match."
+      );
+      return;
+    }
+
+    setBusy(true);
     setError("");
 
-    setMessage(
-      "Registration form is ready. Account creation will be connected later."
-    );
+    try {
+      await register(cleanedData);
+
+      navigate(
+        "/guest/dashboard",
+        {
+          replace: true,
+        }
+      );
+    } catch (err) {
+      setError(
+        err?.message ||
+          "Unable to create your account. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -48,7 +101,9 @@ function Register() {
       {/* Header */}
       <div
         className="jumbotron jumbotron-fluid bg-jumbotron"
-        style={{ marginBottom: "90px" }}
+        style={{
+          marginBottom: "90px",
+        }}
       >
         <div className="container text-center py-5">
           <h3 className="text-white display-3 mb-4">
@@ -57,7 +112,10 @@ function Register() {
 
           <div className="d-inline-flex align-items-center text-white">
             <p className="m-0">
-              <Link className="text-white" to="/">
+              <Link
+                className="text-white"
+                to="/"
+              >
                 Home
               </Link>
             </p>
@@ -92,7 +150,11 @@ function Register() {
                   </p>
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                <form
+                  onSubmit={
+                    handleSubmit
+                  }
+                >
                   <div className="form-row">
                     <div className="col-md-6">
                       <div className="form-group">
@@ -104,10 +166,16 @@ function Register() {
                           id="first-name"
                           type="text"
                           name="firstName"
-                          value={formData.firstName}
-                          onChange={handleChange}
+                          value={
+                            formData.firstName
+                          }
+                          onChange={
+                            handleChange
+                          }
                           className="form-control p-4"
                           placeholder="First name"
+                          autoComplete="given-name"
+                          disabled={busy}
                           required
                         />
                       </div>
@@ -123,10 +191,16 @@ function Register() {
                           id="last-name"
                           type="text"
                           name="lastName"
-                          value={formData.lastName}
-                          onChange={handleChange}
+                          value={
+                            formData.lastName
+                          }
+                          onChange={
+                            handleChange
+                          }
                           className="form-control p-4"
                           placeholder="Last name"
+                          autoComplete="family-name"
+                          disabled={busy}
                           required
                         />
                       </div>
@@ -142,10 +216,16 @@ function Register() {
                       id="register-email"
                       type="email"
                       name="email"
-                      value={formData.email}
-                      onChange={handleChange}
+                      value={
+                        formData.email
+                      }
+                      onChange={
+                        handleChange
+                      }
                       className="form-control p-4"
                       placeholder="Enter your email"
+                      autoComplete="email"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -159,10 +239,16 @@ function Register() {
                       id="register-phone"
                       type="tel"
                       name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
+                      value={
+                        formData.phone
+                      }
+                      onChange={
+                        handleChange
+                      }
                       className="form-control p-4"
-                      placeholder="Enter your contact number"
+                      placeholder="09171234567"
+                      autoComplete="tel"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -178,10 +264,16 @@ function Register() {
                           id="register-password"
                           type="password"
                           name="password"
-                          value={formData.password}
-                          onChange={handleChange}
+                          value={
+                            formData.password
+                          }
+                          onChange={
+                            handleChange
+                          }
                           className="form-control p-4"
                           placeholder="Password"
+                          autoComplete="new-password"
+                          disabled={busy}
                           required
                         />
                       </div>
@@ -197,10 +289,16 @@ function Register() {
                           id="confirm-password"
                           type="password"
                           name="confirmPassword"
-                          value={formData.confirmPassword}
-                          onChange={handleChange}
+                          value={
+                            formData.confirmPassword
+                          }
+                          onChange={
+                            handleChange
+                          }
                           className="form-control p-4"
                           placeholder="Confirm password"
+                          autoComplete="new-password"
+                          disabled={busy}
                           required
                         />
                       </div>
@@ -208,27 +306,25 @@ function Register() {
                   </div>
 
                   {error && (
-                    <p className="text-danger text-center">
+                    <div className="alert alert-danger">
                       {error}
-                    </p>
+                    </div>
                   )}
 
                   <button
                     type="submit"
                     className="btn btn-primary btn-block py-3"
+                    disabled={busy}
                   >
-                    Create Account
+                    {busy
+                      ? "Creating Account..."
+                      : "Create Account"}
                   </button>
-
-                  {message && (
-                    <p className="text-success text-center mt-3 mb-0">
-                      {message}
-                    </p>
-                  )}
                 </form>
 
                 <p className="text-center mt-4 mb-0">
                   Already have an account?{" "}
+
                   <Link to="/login">
                     Login here
                   </Link>

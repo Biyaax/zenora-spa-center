@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import { useAuth } from "../context/AuthContext";
 
 function AuthModal({ isOpen, onClose }) {
@@ -22,6 +26,7 @@ function AuthModal({ isOpen, onClose }) {
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -29,19 +34,31 @@ function AuthModal({ isOpen, onClose }) {
     }
 
     const handleEscape = (event) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !busy) {
         onClose();
       }
     };
 
+    const previousOverflow =
+      document.body.style.overflow;
+
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleEscape);
+
+    window.addEventListener(
+      "keydown",
+      handleEscape
+    );
 
     return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, busy]);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,85 +95,164 @@ function AuthModal({ isOpen, onClose }) {
     setError("");
   };
 
-  const handleLoginSubmit = (event) => {
+  const handleLoginSubmit = async (event) => {
     event.preventDefault();
 
-    if (!loginData.email.trim() || !loginData.password.trim()) {
-      setError("Please enter your email and password.");
+    if (busy) {
       return;
     }
 
-    login(loginData.email);
-
+    setMessage("");
     setError("");
-    setMessage("Login successful.");
 
-    setLoginData({
-      email: "",
-      password: "",
-    });
+    const email = loginData.email.trim();
+    const password = loginData.password;
 
-    onClose();
+    if (!email || !password) {
+      setError(
+        "Please enter your email and password."
+      );
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      await login(email, password);
+
+      setLoginData({
+        email: "",
+        password: "",
+      });
+
+      setError("");
+      setMessage("");
+
+      onClose();
+    } catch (err) {
+      setError(
+        err?.message ||
+          "Unable to log in. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleRegisterSubmit = (event) => {
+  const handleRegisterSubmit = async (event) => {
     event.preventDefault();
 
+    if (busy) {
+      return;
+    }
+
+    setMessage("");
+    setError("");
+
+    const cleanedData = {
+      firstName:
+        registerData.firstName.trim(),
+
+      lastName:
+        registerData.lastName.trim(),
+
+      email:
+        registerData.email.trim(),
+
+      phone:
+        registerData.phone.trim(),
+
+      password:
+        registerData.password,
+
+      confirmPassword:
+        registerData.confirmPassword,
+    };
+
     if (
-      !registerData.firstName.trim() ||
-      !registerData.lastName.trim() ||
-      !registerData.email.trim() ||
-      !registerData.phone.trim() ||
-      !registerData.password.trim()
+      !cleanedData.firstName ||
+      !cleanedData.lastName ||
+      !cleanedData.email ||
+      !cleanedData.phone ||
+      !cleanedData.password ||
+      !cleanedData.confirmPassword
     ) {
-      setError("Please complete all required fields.");
+      setError(
+        "Please complete all required fields."
+      );
       return;
     }
 
     if (
-      registerData.password !==
-      registerData.confirmPassword
+      cleanedData.password !==
+      cleanedData.confirmPassword
     ) {
-      setMessage("");
       setError("Passwords do not match.");
       return;
     }
 
-    register(registerData);
+    setBusy(true);
 
-    setError("");
-    setMessage("Account created successfully.");
+    try {
+      await register(cleanedData);
 
-    setRegisterData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      password: "",
-      confirmPassword: "",
-    });
+      setRegisterData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        password: "",
+        confirmPassword: "",
+      });
 
-    onClose();
+      setError("");
+      setMessage("");
+
+      onClose();
+    } catch (err) {
+      setError(
+        err?.message ||
+          "Unable to create your account. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const showLogin = () => {
+    if (busy) {
+      return;
+    }
+
     setMode("login");
     setMessage("");
     setError("");
   };
 
   const showRegister = () => {
+    if (busy) {
+      return;
+    }
+
     setMode("register");
     setMessage("");
     setError("");
+  };
+
+  const closeModal = () => {
+    if (!busy) {
+      onClose();
+    }
   };
 
   return (
     <div
       className="auth-modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
+        if (
+          event.target === event.currentTarget
+        ) {
+          closeModal();
         }
       }}
     >
@@ -170,13 +266,14 @@ function AuthModal({ isOpen, onClose }) {
         <button
           type="button"
           className="auth-modal-close"
-          onClick={onClose}
+          onClick={closeModal}
           aria-label="Close"
+          disabled={busy}
         >
           &times;
         </button>
 
-        {/* Login */}
+        {/* ================= LOGIN ================= */}
         {mode === "login" && (
           <>
             <div className="text-center mb-4">
@@ -192,7 +289,8 @@ function AuthModal({ isOpen, onClose }) {
               </h2>
 
               <p className="text-muted mb-0">
-                Sign in to manage your spa appointments.
+                Sign in to manage your spa
+                appointments.
               </p>
             </div>
 
@@ -210,6 +308,8 @@ function AuthModal({ isOpen, onClose }) {
                   onChange={handleLoginChange}
                   className="form-control p-4"
                   placeholder="Enter your email"
+                  autoComplete="email"
+                  disabled={busy}
                   required
                 />
               </div>
@@ -227,6 +327,8 @@ function AuthModal({ isOpen, onClose }) {
                   onChange={handleLoginChange}
                   className="form-control p-4"
                   placeholder="Enter your password"
+                  autoComplete="current-password"
+                  disabled={busy}
                   required
                 />
               </div>
@@ -237,6 +339,7 @@ function AuthModal({ isOpen, onClose }) {
                     id="modal-remember"
                     type="checkbox"
                     className="form-check-input"
+                    disabled={busy}
                   />
 
                   <label
@@ -250,6 +353,8 @@ function AuthModal({ isOpen, onClose }) {
                 <button
                   type="button"
                   className="auth-text-button"
+                  disabled
+                  title="Password recovery is not available yet."
                 >
                   Forgot Password?
                 </button>
@@ -270,17 +375,22 @@ function AuthModal({ isOpen, onClose }) {
               <button
                 type="submit"
                 className="btn btn-primary btn-block py-3"
+                disabled={busy}
               >
-                Login
+                {busy
+                  ? "Signing In..."
+                  : "Login"}
               </button>
             </form>
 
             <p className="text-center mt-4 mb-0">
               Don't have an account?{" "}
+
               <button
                 type="button"
                 className="auth-text-button font-weight-bold"
                 onClick={showRegister}
+                disabled={busy}
               >
                 Register here
               </button>
@@ -288,7 +398,7 @@ function AuthModal({ isOpen, onClose }) {
           </>
         )}
 
-        {/* Register */}
+        {/* ================= REGISTER ================= */}
         {mode === "register" && (
           <>
             <div className="text-center mb-4">
@@ -304,8 +414,8 @@ function AuthModal({ isOpen, onClose }) {
               </h2>
 
               <p className="text-muted mb-0">
-                Create a guest account to book and manage
-                your appointments.
+                Create a guest account to book and
+                manage your appointments.
               </p>
             </div>
 
@@ -325,6 +435,8 @@ function AuthModal({ isOpen, onClose }) {
                       onChange={handleRegisterChange}
                       className="form-control p-4"
                       placeholder="First name"
+                      autoComplete="given-name"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -344,6 +456,8 @@ function AuthModal({ isOpen, onClose }) {
                       onChange={handleRegisterChange}
                       className="form-control p-4"
                       placeholder="Last name"
+                      autoComplete="family-name"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -363,6 +477,8 @@ function AuthModal({ isOpen, onClose }) {
                   onChange={handleRegisterChange}
                   className="form-control p-4"
                   placeholder="Enter your email"
+                  autoComplete="email"
+                  disabled={busy}
                   required
                 />
               </div>
@@ -379,7 +495,9 @@ function AuthModal({ isOpen, onClose }) {
                   value={registerData.phone}
                   onChange={handleRegisterChange}
                   className="form-control p-4"
-                  placeholder="Enter your contact number"
+                  placeholder="09171234567"
+                  autoComplete="tel"
+                  disabled={busy}
                   required
                 />
               </div>
@@ -399,6 +517,8 @@ function AuthModal({ isOpen, onClose }) {
                       onChange={handleRegisterChange}
                       className="form-control p-4"
                       placeholder="Password"
+                      autoComplete="new-password"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -414,10 +534,14 @@ function AuthModal({ isOpen, onClose }) {
                       id="modal-confirm-password"
                       type="password"
                       name="confirmPassword"
-                      value={registerData.confirmPassword}
+                      value={
+                        registerData.confirmPassword
+                      }
                       onChange={handleRegisterChange}
                       className="form-control p-4"
                       placeholder="Confirm password"
+                      autoComplete="new-password"
+                      disabled={busy}
                       required
                     />
                   </div>
@@ -439,17 +563,22 @@ function AuthModal({ isOpen, onClose }) {
               <button
                 type="submit"
                 className="btn btn-primary btn-block py-3"
+                disabled={busy}
               >
-                Create Account
+                {busy
+                  ? "Creating Account..."
+                  : "Create Account"}
               </button>
             </form>
 
             <p className="text-center mt-4 mb-0">
               Already have an account?{" "}
+
               <button
                 type="button"
                 className="auth-text-button font-weight-bold"
                 onClick={showLogin}
+                disabled={busy}
               >
                 Login here
               </button>
