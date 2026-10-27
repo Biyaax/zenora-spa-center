@@ -14,7 +14,6 @@ export default function TherapistSidebar({ mobileOpen, onClose }) {
       <aside className={`therapist-sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="therapist-sidebar-brand">
           <h2 className="mb-0 text-primary">ZENORA</h2>
-          <small>Massage Therapist Portal</small>
         </div>
         <nav className="therapist-nav" aria-label="Therapist navigation">
           {items.map(([path, icon, title]) => (
@@ -24,10 +23,6 @@ export default function TherapistSidebar({ mobileOpen, onClose }) {
             </NavLink>
           ))}
         </nav>
-        <div className="therapist-sidebar-footer">
-          <p className="mb-1">Portal access</p>
-          <strong>Massage Therapist</strong>
-        </div>
       </aside>
     </>
   );

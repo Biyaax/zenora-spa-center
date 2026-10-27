@@ -106,3 +106,16 @@
 .therapist-details-grid p{margin:0!important;color:#433c37;font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap}
 .therapist-notes-readonly{padding:15px;background:#fff8f5;border-left:3px solid #f9a392}
 @media(max-width:480px){.therapist-details-dialog{padding:20px 17px}.therapist-details-grid{gap:15px 12px}}
+
+/* v6: one ZENORA logo in the sidebar; one therapist role indicator with the staff name. */
+.therapist-sidebar-brand h2{margin-bottom:0!important}
+.therapist-user{margin-left:auto}
+.therapist-user .therapist-user-text{display:flex}
+.therapist-user-text strong{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:768px){.therapist-user .therapist-user-text{display:flex}}
+@media(max-width:480px){
+  .therapist-account-trigger{gap:7px}
+  .therapist-user-text strong{max-width:125px;font-size:12px}
+  .therapist-user-text small{font-size:10px}
+  .therapist-avatar{width:36px;height:36px}
+}

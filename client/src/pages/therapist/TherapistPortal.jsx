@@ -218,7 +218,16 @@ function ConfirmDialog({ pending, onConfirm, onCancel, onNoteChange, cancelRef }
 export default function TherapistPortal() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  // Show the authenticated therapist's name when staff login is integrated.
+  // Current AuthContext handles Guest users, so never display a Guest identity as a therapist.
+  const role = String(user?.role ?? "").replace(/[_-]/g, " ").trim().toLowerCase();
+  const isTherapistAccount = ["therapist", "massage therapist"].includes(role);
+  const signedInName = isTherapistAccount
+    ? String(user?.fullName || user?.name || [user?.firstName, user?.lastName].filter(Boolean).join(" ")).trim()
+    : "";
+  const therapistName = signedInName || "Therapist Name";
+  const therapistInitial = signedInName ? signedInName.charAt(0).toUpperCase() : "T";
   const accountMenuRef = useRef(null);
   const cancelRef = useRef(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -346,12 +355,11 @@ export default function TherapistPortal() {
     <TherapistSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
     <main className="therapist-main">
       <header className="therapist-topbar">
-        <div className="therapist-heading"><button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><i className="fas fa-bars" /></button><div><p>ZENORA Staff Workspace</p><strong className="therapist-topbar-name">Massage Therapist Portal</strong></div></div>
+        <div className="therapist-heading"><button type="button" className="therapist-menu-btn" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><i className="fas fa-bars" /></button></div>
         <div className="therapist-user">
-          <span className="therapist-sample-chip" title="Sample records and in-memory actions only">Sample data</span>
           <div className="therapist-user-menu-wrap" ref={accountMenuRef}>
             <button type="button" className="therapist-account-trigger" aria-expanded={accountOpen} aria-haspopup="true" aria-controls="therapist-account-options" onClick={() => setAccountOpen(open => !open)}>
-              <span className="therapist-avatar" aria-hidden="true">T</span><span className="therapist-user-text"><strong>Therapist</strong><small>Staff Portal</small></span><i className={`fas fa-chevron-${accountOpen ? "up" : "down"} therapist-account-caret`} aria-hidden="true" />
+              <span className="therapist-avatar" aria-hidden="true">{therapistInitial}</span><span className="therapist-user-text"><strong>{therapistName}</strong><small>Massage Therapist</small></span><i className={`fas fa-chevron-${accountOpen ? "up" : "down"} therapist-account-caret`} aria-hidden="true" />
             </button>
             {accountOpen && <div id="therapist-account-options" className="therapist-account-menu therapist-account-menu-compact" role="menu" aria-label="Therapist account options">
               <button type="button" role="menuitem" className="therapist-account-link therapist-account-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt" aria-hidden="true" />Logout</button>
