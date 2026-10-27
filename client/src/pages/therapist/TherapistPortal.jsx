@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import TherapistSidebar from "../../components/TherapistSidebar";
 
@@ -44,32 +45,134 @@ function Badge({ status }) {
   return <span className={`therapist-badge badge-${status.toLowerCase().replace(/\s+/g, "-")}`}>{status}</span>;
 }
 
-function AppointmentTable({ rows, onRequestStatus, onEditNotes, allowActions = false }) {
+// One compact action menu per appointment. Render the popover in a portal so
+// the responsive horizontally scrolling table does not clip the dropdown.
+function AppointmentActions({ appointment, onViewDetails, onRequestStatus, onEditNotes, allowStatusChanges }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const menuId = `therapist-actions-${appointment.id}`;
+
+  const options = [
+    { label: "View details", icon: "far fa-eye", action: () => onViewDetails(appointment) },
+  ];
+  if (allowStatusChanges) {
+    if (appointment.status === "Checked In") {
+      options.push({ label: "Start session", icon: "fas fa-play", action: () => onRequestStatus(appointment, "Ongoing") });
+    } else if (appointment.status === "Ongoing") {
+      options.push({ label: "Complete session", icon: "far fa-check-circle", action: () => onRequestStatus(appointment, "Completed") });
+    } else if (appointment.status === "Confirmed" && scheduledEndPassed(appointment)) {
+      options.push({ label: "Mark No-Show", icon: "far fa-calendar-times", action: () => onRequestStatus(appointment, "No-Show") });
+    } else if (appointment.status === "Completed") {
+      options.push({ label: "Edit notes", icon: "far fa-edit", action: () => onEditNotes(appointment) });
+    }
+  }
+
+  const openMenu = () => {
+    if (isOpen) { setIsOpen(false); return; }
+    const rect = triggerRef.current.getBoundingClientRect();
+    // Keep the menu on screen even near the table's right or lower edge.
+    const menuWidth = 188;
+    const approximateHeight = 12 + options.length * 42;
+    const placeAbove = window.innerHeight - rect.bottom < approximateHeight + 12 && rect.top > approximateHeight + 12;
+    setPosition({
+      top: placeAbove ? rect.top - approximateHeight - 6 : rect.bottom + 6,
+      left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+    });
+    setIsOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onPointerDown(event) {
+      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") { setIsOpen(false); triggerRef.current?.focus(); }
+    }
+    function onViewportChange() { setIsOpen(false); }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("scroll", onViewportChange, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, true);
+    };
+  }, [isOpen]);
+
+  return <>
+    <button type="button" ref={triggerRef} className="therapist-actions-trigger"
+      aria-haspopup="menu" aria-expanded={isOpen} aria-controls={isOpen ? menuId : undefined}
+      aria-label={`Actions for ${appointment.client}, ${appointment.id}`}
+      onClick={openMenu}>
+      Actions <i className="fas fa-chevron-down" aria-hidden="true" />
+    </button>
+    {isOpen && createPortal(
+      <div id={menuId} ref={menuRef} role="menu" aria-label={`Actions for ${appointment.id}`}
+        className="therapist-actions-popover" style={{ top: position.top, left: position.left }}>
+        {options.map((option, index) => <button key={option.label} type="button" role="menuitem"
+          className={`therapist-actions-item ${index === 1 ? "therapist-actions-item-separated" : ""}`}
+          onClick={() => { setIsOpen(false); option.action(); }}>
+          <i className={option.icon} aria-hidden="true" /> {option.label}
+        </button>)}
+      </div>, document.body)
+    }
+  </>;
+}
+
+function AppointmentTable({ rows, onRequestStatus, onEditNotes, onViewDetails, allowActions = false }) {
   if (!rows.length) return <div className="therapist-empty">No appointments match these filters. Choose All Dates or another status to view more sessions.</div>;
   return <div className="therapist-table-wrap">
     <table className="therapist-table">
-      <thead><tr><th>Booking ID</th><th>Date / Time</th><th>Client</th><th>Service</th><th>Special Request</th><th>Status</th>{allowActions && <th>Actions</th>}</tr></thead>
+      <thead><tr><th>Booking ID</th><th>Date / Time</th><th>Client</th><th>Service</th><th>Special Request</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>{rows.map(a => <tr key={a.id}>
         <td><strong>{a.id}</strong></td>
         <td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td>
-        <td><strong>{a.client}</strong>
-          <details className="therapist-client-details"><summary>View details</summary>
-            <div><p><b>Phone:</b> {a.phone}</p><p><b>Service:</b> {a.service} ({a.duration} min)</p><p><b>Request:</b> {a.request || "None"}</p><p><b>Session status:</b> {a.status}</p>{a.status === "Completed" && <><p className="therapist-detail-notes"><b>Service notes:</b> {a.notes.trim() || "No notes recorded yet"}</p><button type="button" className="therapist-text-link therapist-detail-edit" onClick={() => onEditNotes(a)}><i className="far fa-edit" aria-hidden="true" /> Edit notes</button></>}</div>
-          </details>
-        </td>
+        <td><strong>{a.client}</strong></td>
         <td>{a.service}<small>{a.duration} min</small></td>
-        <td>{a.request || "None"}</td><td><Badge status={a.status} /></td>
-        {allowActions && <td><div className="therapist-inline-actions">
-          {a.status === "Checked In" && <button type="button" className="therapist-btn primary" onClick={() => onRequestStatus(a, "Ongoing")}>Start</button>}
-          {a.status === "Ongoing" && <button type="button" className="therapist-btn primary" onClick={() => onRequestStatus(a, "Completed")}>Complete</button>}
-          {a.status === "Confirmed" && (scheduledEndPassed(a)
-            ? <button type="button" className="therapist-btn outline" onClick={() => onRequestStatus(a, "No-Show")}>Mark No-Show</button>
-            : <span className="therapist-subtle">{a.date > dateOffset(0) ? "Upcoming" : "Awaiting check-in / session end"}</span>)}
-          {a.status === "Completed" && <button type="button" className="therapist-text-link" onClick={() => onEditNotes(a)}>Edit notes</button>}
-          {a.status === "No-Show" && <span className="therapist-subtle">Recorded</span>}
-        </div></td>}
+        <td>{a.request || "None"}</td>
+        <td><Badge status={a.status} /></td>
+        <td>
+          <AppointmentActions appointment={a} onViewDetails={onViewDetails}
+            onRequestStatus={onRequestStatus} onEditNotes={onEditNotes} allowStatusChanges={allowActions} />
+        </td>
       </tr>)}</tbody>
     </table>
+  </div>;
+}
+
+// Read-only appointment information; editing stays exclusively in Actions > Edit notes.
+function AppointmentDetailsDialog({ appointment, onClose }) {
+  const closeRef = useRef(null);
+  useEffect(() => { closeRef.current?.focus(); }, []);
+  if (!appointment) return null;
+  return <div className="therapist-dialog-backdrop" role="presentation"
+    onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="therapist-details-title"
+      className="therapist-dialog therapist-details-dialog">
+      <div className="therapist-details-heading">
+        <div><p className="therapist-details-eyebrow">{appointment.id}</p><h3 id="therapist-details-title">Appointment Details</h3></div>
+        <button type="button" className="therapist-details-close" aria-label="Close appointment details" onClick={onClose}>×</button>
+      </div>
+      <div className="therapist-details-grid">
+        <div><span>Client</span><strong>{appointment.client}</strong></div>
+        <div><span>Contact Number</span><strong>{appointment.phone || "—"}</strong></div>
+        <div><span>Service</span><strong>{appointment.service}</strong></div>
+        <div><span>Duration</span><strong>{appointment.duration} minutes</strong></div>
+        <div><span>Date</span><strong>{formatDate(appointment.date)}</strong></div>
+        <div><span>Time</span><strong>{formatTime(appointment.time)}</strong></div>
+        <div className="therapist-details-full"><span>Status</span><Badge status={appointment.status} /></div>
+        <div className="therapist-details-full"><span>Special Request</span><p>{appointment.request || "None"}</p></div>
+        {appointment.status === "Completed" && <div className="therapist-details-full therapist-notes-readonly">
+          <span>Service Notes</span><p>{appointment.notes.trim() || "No service notes recorded yet."}</p>
+        </div>}
+      </div>
+      <div className="therapist-dialog-actions"><button ref={closeRef} type="button" className="therapist-btn primary" onClick={onClose}>Close</button></div>
+    </section>
   </div>;
 }
 
@@ -101,8 +204,8 @@ function ConfirmDialog({ pending, onConfirm, onCancel, onNoteChange, cancelRef }
           onChange={event => onNoteChange(event.target.value)}
           placeholder="Briefly document the service provided and relevant session observations." />
         <small>{pending.kind === "completeWithNotes"
-          ? "Required to complete the session. You can review or edit this note under the appointment's View details."
-          : "Changes to these notes are visible in this appointment's View details."}</small>
+          ? "Required to complete the session. You can review this note in View details, or edit it from the appointment Actions menu."
+          : "Updated notes will appear in View details."}</small>
       </div>}
       <div className="therapist-dialog-actions">
         <button type="button" className="therapist-btn neutral" ref={cancelRef} onClick={onCancel}>Cancel</button>
@@ -131,6 +234,7 @@ export default function TherapistPortal() {
   const [history, setHistory] = useState([]);
   const [lastAction, setLastAction] = useState(null);
   const [pending, setPending] = useState(null);
+  const [detailsId, setDetailsId] = useState(null);
   const [notice, setNotice] = useState({ page: "", message: "" });
   const [availableDays, setAvailableDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
   const [timeOff, setTimeOff] = useState([]);
@@ -142,7 +246,7 @@ export default function TherapistPortal() {
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) setAccountOpen(false);
     }
     function onKey(event) {
-      if (event.key === "Escape") { setAccountOpen(false); setPending(null); }
+      if (event.key === "Escape") { setAccountOpen(false); setPending(null); setDetailsId(null); }
     }
     document.addEventListener("pointerdown", onOutside);
     document.addEventListener("keydown", onKey);
@@ -263,7 +367,7 @@ export default function TherapistPortal() {
           <div className="therapist-stats">
             {[["Today's Sessions", todayRows.length, "far fa-calendar-alt"], ["Ready to Start", todayRows.filter(a => a.status === "Checked In").length, "far fa-clock"], ["Ongoing", todayRows.filter(a => a.status === "Ongoing").length, "fas fa-spa"], ["Completed", todayRows.filter(a => a.status === "Completed").length, "fas fa-check-circle"]].map(([label, value, icon]) => <div className="therapist-stat" key={label}><div><p>{label}</p><h2>{value}</h2></div><span><i className={icon} /></span></div>)}
           </div>
-          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} /></div>
+          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} onViewDetails={a => setDetailsId(a.id)} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} /></div>
           <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/appointments" className="therapist-action"><i className="fas fa-clipboard-list"/><div><h5>My Appointments</h5><p>View client details and update session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage your days and time-off requests.</p></div></Link></div>
         </>}
 
@@ -277,7 +381,7 @@ export default function TherapistPortal() {
             <div className="therapist-filters"><div className="therapist-switch" aria-label="Date range"><button type="button" className={view === "daily" ? "selected" : ""} onClick={() => setView("daily")}>Daily</button><button type="button" className={view === "weekly" ? "selected" : ""} onClick={() => setView("weekly")}>Weekly</button><button type="button" className={view === "all" ? "selected" : ""} onClick={() => setView("all")}>All Dates</button></div>{view !== "all" && <label>Date <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}/></label>}<label className="therapist-search">Search <input type="search" placeholder="Client, booking, service..." value={query} onChange={e => setQuery(e.target.value)}/></label></div>
             {current === "appointments" && <div className="therapist-status-filters" role="group" aria-label="Filter appointments by status">{statuses.map(status => <button type="button" key={status} className={statusFilter === status ? "selected" : ""} aria-pressed={statusFilter === status} onClick={() => selectStatus(status)}>{status} <span>{status === "All" ? appointments.length : byStatus(status)}</span></button>)}</div>}
             <div className="therapist-list-summary"><span>{visibleRows.length} appointment{visibleRows.length === 1 ? "" : "s"} found</span>{current === "appointments" && (statusFilter !== "All" || view !== "daily") && <button type="button" className="therapist-text-link therapist-reset" onClick={() => { setView("daily"); setStatusFilter("All"); setQuery(""); setSelectedDate(dateOffset(0)); }}>Reset filters</button>}</div>
-            <AppointmentTable rows={visibleRows} allowActions={current === "appointments"} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} onRequestStatus={(appointment, next) => setPending(next === "Completed" ? { kind: "completeWithNotes", appointment, note: appointment.notes } : { kind: "status", appointment, next })}/>
+            <AppointmentTable rows={visibleRows} onViewDetails={a => setDetailsId(a.id)} allowActions={current === "appointments"} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} onRequestStatus={(appointment, next) => setPending(next === "Completed" ? { kind: "completeWithNotes", appointment, note: appointment.notes } : { kind: "status", appointment, next })}/>
             {current === "appointments" && lastAction && <div className="therapist-undo-bar"><span>Last update: <strong>{lastAction.id}</strong> → {lastAction.next}</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
           </>}
           {current === "appointments" && appointmentTab === "history" && <>
@@ -293,6 +397,7 @@ export default function TherapistPortal() {
         </div>}
       </div>
     </main>
+    <AppointmentDetailsDialog appointment={appointments.find(a => a.id === detailsId) || null} onClose={() => setDetailsId(null)} />
     <ConfirmDialog pending={pending} onConfirm={confirmPending} onCancel={() => setPending(null)} onNoteChange={note => setPending(prev => prev && ["completeWithNotes", "editNote"].includes(prev.kind) ? { ...prev, note } : prev)} cancelRef={cancelRef}/>
   </div>;
 }
