@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import TherapistSidebar from "../../components/TherapistSidebar";
 
@@ -24,7 +24,6 @@ const pages = {
   dashboard: ["Dashboard", "Your personal workday overview"],
   schedule: ["My Schedule", "Review your daily and weekly appointments"],
   appointments: ["My Appointments", "Review clients, manage session statuses, and see your session history"],
-  notes: ["Service Notes", "Record notes after each completed service"],
   availability: ["Availability & Time-Off", "Manage your available days and submit time-off requests"],
 };
 const statuses = ["All", "Confirmed", "Checked In", "Ongoing", "Completed", "No-Show"];
@@ -45,7 +44,7 @@ function Badge({ status }) {
   return <span className={`therapist-badge badge-${status.toLowerCase().replace(/\s+/g, "-")}`}>{status}</span>;
 }
 
-function AppointmentTable({ rows, onRequestStatus, allowActions = false }) {
+function AppointmentTable({ rows, onRequestStatus, onEditNotes, allowActions = false }) {
   if (!rows.length) return <div className="therapist-empty">No appointments match these filters. Choose All Dates or another status to view more sessions.</div>;
   return <div className="therapist-table-wrap">
     <table className="therapist-table">
@@ -55,7 +54,7 @@ function AppointmentTable({ rows, onRequestStatus, allowActions = false }) {
         <td>{formatDate(a.date)}<small>{formatTime(a.time)}</small></td>
         <td><strong>{a.client}</strong>
           <details className="therapist-client-details"><summary>View details</summary>
-            <div><p><b>Phone:</b> {a.phone}</p><p><b>Service:</b> {a.service} ({a.duration} min)</p><p><b>Request:</b> {a.request || "None"}</p></div>
+            <div><p><b>Phone:</b> {a.phone}</p><p><b>Service:</b> {a.service} ({a.duration} min)</p><p><b>Request:</b> {a.request || "None"}</p><p><b>Session status:</b> {a.status}</p>{a.status === "Completed" && <><p className="therapist-detail-notes"><b>Service notes:</b> {a.notes.trim() || "No notes recorded yet"}</p><button type="button" className="therapist-text-link therapist-detail-edit" onClick={() => onEditNotes(a)}><i className="far fa-edit" aria-hidden="true" /> Edit notes</button></>}</div>
           </details>
         </td>
         <td>{a.service}<small>{a.duration} min</small></td>
@@ -66,7 +65,7 @@ function AppointmentTable({ rows, onRequestStatus, allowActions = false }) {
           {a.status === "Confirmed" && (scheduledEndPassed(a)
             ? <button type="button" className="therapist-btn outline" onClick={() => onRequestStatus(a, "No-Show")}>Mark No-Show</button>
             : <span className="therapist-subtle">{a.date > dateOffset(0) ? "Upcoming" : "Awaiting check-in / session end"}</span>)}
-          {a.status === "Completed" && <Link to="/therapist/notes" className="therapist-text-link">View notes</Link>}
+          {a.status === "Completed" && <button type="button" className="therapist-text-link" onClick={() => onEditNotes(a)}>Edit notes</button>}
           {a.status === "No-Show" && <span className="therapist-subtle">Recorded</span>}
         </div></td>}
       </tr>)}</tbody>
@@ -74,17 +73,20 @@ function AppointmentTable({ rows, onRequestStatus, allowActions = false }) {
   </div>;
 }
 
-function ConfirmDialog({ pending, onConfirm, onCancel, cancelRef }) {
+function ConfirmDialog({ pending, onConfirm, onCancel, onNoteChange, cancelRef }) {
   if (!pending) return null;
-  const title = pending.kind === "undo" ? "Undo the last status change?"
+  const title = pending.kind === "completeWithNotes" ? "Complete session and record notes"
+    : pending.kind === "undo" ? "Undo the last status change?"
     : pending.kind === "status" ? `Confirm ${pending.next} status?`
-    : pending.kind === "note" ? "Save service notes?"
+    : pending.kind === "editNote" ? "Edit service notes"
     : pending.kind === "availability" ? "Save regular availability?"
     : "Submit time-off request?";
-  const details = pending.kind === "status"
+  const details = pending.kind === "completeWithNotes"
+    ? `Confirm that ${pending.appointment.client}'s ${pending.appointment.service} session (${pending.appointment.id}) is finished. Record the service notes before completing the session.`
+    : pending.kind === "status"
     ? `${pending.appointment.client} (${pending.appointment.id}) will change from ${pending.appointment.status} to ${pending.next}.`
     : pending.kind === "undo" ? `${pending.action.id} will return from ${pending.action.next} to ${pending.action.previous}.`
-    : pending.kind === "note" ? `Save the edited notes for booking ${pending.id}?`
+    : pending.kind === "editNote" ? `Review and update the service notes for ${pending.appointment.client} (${pending.appointment.id}).`
     : pending.kind === "timeOff" ? `Add a time-off request for ${formatDate(pending.date)}?`
     : "Update your selected regular working days?";
   return <div className="therapist-dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
@@ -92,9 +94,19 @@ function ConfirmDialog({ pending, onConfirm, onCancel, cancelRef }) {
       <div className="therapist-dialog-heading"><span className="therapist-dialog-icon"><i className="fas fa-question" aria-hidden="true" /></span><h3 id="therapist-dialog-title">{title}</h3></div>
       <p id="therapist-dialog-description">{details}</p>
       {pending.kind === "status" && pending.next === "No-Show" && <p className="therapist-warning">A no-show should only be recorded after the scheduled session has elapsed and attendance has been verified.</p>}
+      {(pending.kind === "completeWithNotes" || pending.kind === "editNote") && <div className="therapist-completion-form">
+        <label htmlFor="therapist-session-note-input">Service notes <span aria-hidden="true">*</span></label>
+        <textarea id="therapist-session-note-input" rows="5" required autoFocus maxLength={2000}
+          value={pending.note || ""}
+          onChange={event => onNoteChange(event.target.value)}
+          placeholder="Briefly document the service provided and relevant session observations." />
+        <small>{pending.kind === "completeWithNotes"
+          ? "Required to complete the session. You can review or edit this note under the appointment's View details."
+          : "Changes to these notes are visible in this appointment's View details."}</small>
+      </div>}
       <div className="therapist-dialog-actions">
         <button type="button" className="therapist-btn neutral" ref={cancelRef} onClick={onCancel}>Cancel</button>
-        <button type="button" className="therapist-btn primary" onClick={onConfirm}>Confirm</button>
+        <button type="button" className="therapist-btn primary" onClick={onConfirm} disabled={["completeWithNotes", "editNote"].includes(pending.kind) && !(pending.note || "").trim()}>{pending.kind === "completeWithNotes" ? "Complete Session" : pending.kind === "editNote" ? "Save Changes" : "Confirm"}</button>
       </div>
     </section>
   </div>;
@@ -119,7 +131,6 @@ export default function TherapistPortal() {
   const [history, setHistory] = useState([]);
   const [lastAction, setLastAction] = useState(null);
   const [pending, setPending] = useState(null);
-  const [editingNotes, setEditingNotes] = useState({});
   const [notice, setNotice] = useState({ page: "", message: "" });
   const [availableDays, setAvailableDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri"]);
   const [timeOff, setTimeOff] = useState([]);
@@ -137,7 +148,7 @@ export default function TherapistPortal() {
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onOutside); document.removeEventListener("keydown", onKey); };
   }, []);
-  useEffect(() => { if (pending) cancelRef.current?.focus(); }, [pending]);
+  useEffect(() => { if (pending && !["completeWithNotes", "editNote"].includes(pending.kind)) cancelRef.current?.focus(); }, [pending]);
 
   const showNotice = (message) => setNotice({ page: current, message });
   const handleLogout = () => {
@@ -156,7 +167,23 @@ export default function TherapistPortal() {
 
   const confirmPending = () => {
     if (!pending) return;
-    if (pending.kind === "status") {
+    if (pending.kind === "completeWithNotes") {
+      const { appointment } = pending;
+      const latest = appointments.find(a => a.id === appointment.id);
+      const text = (pending.note || "").trim();
+      if (!latest || latest.status !== "Ongoing") {
+        showNotice("This appointment has changed. Review its status before completing it.");
+      } else if (!text) {
+        showNotice("Enter a service note before completing the session.");
+        return;
+      } else {
+        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, status: "Completed", notes: text } : a));
+        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: "Ongoing", next: "Completed", action: "Session completed · notes recorded", at: new Date().toISOString() }, ...prev]);
+        // A completed session containing notes must not be silently undone.
+        setLastAction(null);
+        showNotice(`${appointment.id} marked Completed with service notes (sample data only).`);
+      }
+    } else if (pending.kind === "status") {
       const { appointment, next } = pending;
       const latest = appointments.find(a => a.id === appointment.id);
       if (!latest || latest.status !== appointment.status) {
@@ -182,14 +209,20 @@ export default function TherapistPortal() {
         showNotice(`${action.id} restored to ${action.previous}. The correction is recorded in this page's history.`);
       }
       setLastAction(null);
-    } else if (pending.kind === "note") {
-      const text = (editingNotes[pending.id] ?? appointments.find(a => a.id === pending.id)?.notes ?? "").trim();
-      if (!text) showNotice("Enter a service note before saving.");
-      else {
-        setAppointments(prev => prev.map(a => a.id === pending.id ? { ...a, notes: text } : a));
-        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: pending.id, client: appointments.find(a => a.id === pending.id)?.client ?? "", previous: "—", next: "Notes saved", action: "Service note", at: new Date().toISOString() }, ...prev]);
-        setLastAction(prev => prev?.id === pending.id ? null : prev);
-        showNotice(`Service notes for ${pending.id} saved in this local preview.`);
+    } else if (pending.kind === "editNote") {
+      const { appointment } = pending;
+      const latest = appointments.find(a => a.id === appointment.id);
+      const text = (pending.note || "").trim();
+      if (!latest || latest.status !== "Completed") {
+        showNotice("Only completed appointments can have their service notes edited.");
+      } else if (!text) {
+        showNotice("Enter a service note before saving.");
+        return;
+      } else if (text !== latest.notes) {
+        setAppointments(prev => prev.map(a => a.id === appointment.id ? { ...a, notes: text } : a));
+        setHistory(prev => [{ key: `${Date.now()}-${prev.length}`, id: appointment.id, client: appointment.client, previous: "—", next: "Notes updated", action: latest.notes ? "Service note edited" : "Service note added", at: new Date().toISOString() }, ...prev]);
+        setLastAction(prev => prev?.id === appointment.id ? null : prev);
+        showNotice(`Service notes for ${appointment.id} updated (sample data only).`);
       }
     } else if (pending.kind === "availability") {
       showNotice("Availability updated for this session only.");
@@ -200,6 +233,10 @@ export default function TherapistPortal() {
     }
     setPending(null);
   };
+
+  // Keep old bookmarked /therapist/notes URLs from rendering a blank page.
+  // App.jsx can remove the old route after teammates merge these UI changes.
+  if (section === "notes") return <Navigate to="/therapist/appointments" replace />;
 
   return <div className="therapist-layout">
     <TherapistSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
@@ -212,10 +249,9 @@ export default function TherapistPortal() {
             <button type="button" className="therapist-account-trigger" aria-expanded={accountOpen} aria-haspopup="true" aria-controls="therapist-account-options" onClick={() => setAccountOpen(open => !open)}>
               <span className="therapist-avatar" aria-hidden="true">T</span><span className="therapist-user-text"><strong>Therapist</strong><small>Staff Portal</small></span><i className={`fas fa-chevron-${accountOpen ? "up" : "down"} therapist-account-caret`} aria-hidden="true" />
             </button>
-            {accountOpen && <nav id="therapist-account-options" className="therapist-account-menu" aria-label="Therapist account options">
-              {[["/therapist/dashboard", "fas fa-home", "Dashboard"], ["/therapist/schedule", "far fa-calendar-alt", "My Schedule"], ["/therapist/appointments", "fas fa-clipboard-list", "My Appointments"], ["/therapist/notes", "far fa-sticky-note", "Service Notes"], ["/therapist/availability", "far fa-clock", "Availability & Time-Off"]].map(([path, icon, label]) => <NavLink key={path} to={path} onClick={() => setAccountOpen(false)} className={({ isActive }) => `therapist-account-link ${isActive ? "active" : ""}`}><i className={icon} aria-hidden="true" />{label}</NavLink>)}
-              <div className="therapist-account-divider" /><button type="button" className="therapist-account-link therapist-account-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt" aria-hidden="true" />Logout</button>
-            </nav>}
+            {accountOpen && <div id="therapist-account-options" className="therapist-account-menu therapist-account-menu-compact" role="menu" aria-label="Therapist account options">
+              <button type="button" role="menuitem" className="therapist-account-link therapist-account-logout" onClick={handleLogout}><i className="fas fa-sign-out-alt" aria-hidden="true" />Logout</button>
+            </div>}
           </div>
         </div>
       </header>
@@ -227,8 +263,8 @@ export default function TherapistPortal() {
           <div className="therapist-stats">
             {[["Today's Sessions", todayRows.length, "far fa-calendar-alt"], ["Ready to Start", todayRows.filter(a => a.status === "Checked In").length, "far fa-clock"], ["Ongoing", todayRows.filter(a => a.status === "Ongoing").length, "fas fa-spa"], ["Completed", todayRows.filter(a => a.status === "Completed").length, "fas fa-check-circle"]].map(([label, value, icon]) => <div className="therapist-stat" key={label}><div><p>{label}</p><h2>{value}</h2></div><span><i className={icon} /></span></div>)}
           </div>
-          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} /></div>
-          <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/notes" className="therapist-action"><i className="far fa-sticky-note"/><div><h5>Service Notes</h5><p>Record post-session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage your days and time-off requests.</p></div></Link></div>
+          <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Today's Appointments</h4><p>Sessions assigned to you for {formatDate(dateOffset(0))}.</p></div><Link to="/therapist/appointments" className="therapist-btn primary">View Appointments</Link></div><AppointmentTable rows={todayRows} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} /></div>
+          <div className="therapist-actions"><Link to="/therapist/schedule" className="therapist-action"><i className="far fa-calendar-alt"/><div><h5>My Schedule</h5><p>Review upcoming appointments.</p></div></Link><Link to="/therapist/appointments" className="therapist-action"><i className="fas fa-clipboard-list"/><div><h5>My Appointments</h5><p>View client details and update session notes.</p></div></Link><Link to="/therapist/availability" className="therapist-action"><i className="far fa-clock"/><div><h5>Availability</h5><p>Manage your days and time-off requests.</p></div></Link></div>
         </>}
 
         {(current === "schedule" || current === "appointments") && <div className="therapist-panel">
@@ -241,23 +277,22 @@ export default function TherapistPortal() {
             <div className="therapist-filters"><div className="therapist-switch" aria-label="Date range"><button type="button" className={view === "daily" ? "selected" : ""} onClick={() => setView("daily")}>Daily</button><button type="button" className={view === "weekly" ? "selected" : ""} onClick={() => setView("weekly")}>Weekly</button><button type="button" className={view === "all" ? "selected" : ""} onClick={() => setView("all")}>All Dates</button></div>{view !== "all" && <label>Date <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}/></label>}<label className="therapist-search">Search <input type="search" placeholder="Client, booking, service..." value={query} onChange={e => setQuery(e.target.value)}/></label></div>
             {current === "appointments" && <div className="therapist-status-filters" role="group" aria-label="Filter appointments by status">{statuses.map(status => <button type="button" key={status} className={statusFilter === status ? "selected" : ""} aria-pressed={statusFilter === status} onClick={() => selectStatus(status)}>{status} <span>{status === "All" ? appointments.length : byStatus(status)}</span></button>)}</div>}
             <div className="therapist-list-summary"><span>{visibleRows.length} appointment{visibleRows.length === 1 ? "" : "s"} found</span>{current === "appointments" && (statusFilter !== "All" || view !== "daily") && <button type="button" className="therapist-text-link therapist-reset" onClick={() => { setView("daily"); setStatusFilter("All"); setQuery(""); setSelectedDate(dateOffset(0)); }}>Reset filters</button>}</div>
-            <AppointmentTable rows={visibleRows} allowActions={current === "appointments"} onRequestStatus={(appointment, next) => setPending({ kind: "status", appointment, next })}/>
+            <AppointmentTable rows={visibleRows} allowActions={current === "appointments"} onEditNotes={appointment => setPending({ kind: "editNote", appointment, note: appointment.notes })} onRequestStatus={(appointment, next) => setPending(next === "Completed" ? { kind: "completeWithNotes", appointment, note: appointment.notes } : { kind: "status", appointment, next })}/>
             {current === "appointments" && lastAction && <div className="therapist-undo-bar"><span>Last update: <strong>{lastAction.id}</strong> → {lastAction.next}</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
           </>}
           {current === "appointments" && appointmentTab === "history" && <>
-            <div className="therapist-history-intro"><p>Recent status changes and note updates made in this browser session. This is not the manager's system-wide activity log.</p></div>
+            <div className="therapist-history-intro"><p>Your session status changes and service-note updates appear here. The Spa Manager maintains the system-wide activity log.</p></div>
             {history.length === 0 ? <div className="therapist-empty">No changes recorded in this session yet. Try confirming a status change in Appointment List.</div> : <div className="therapist-table-wrap"><table className="therapist-table therapist-history-table"><thead><tr><th>When</th><th>Booking / Client</th><th>Action</th><th>Previous</th><th>New status</th></tr></thead><tbody>{history.map(entry => <tr key={entry.key}><td>{formatTimestamp(entry.at)}</td><td><strong>{entry.id}</strong><small>{entry.client}</small></td><td>{entry.action}</td><td>{entry.previous}</td><td>{entry.next}</td></tr>)}</tbody></table></div>}
             {lastAction && <div className="therapist-undo-bar"><span>Made a mistake on <strong>{lastAction.id}</strong>?</span><button type="button" className="therapist-btn outline" onClick={() => setPending({ kind: "undo", action: lastAction })}><i className="fas fa-undo" aria-hidden="true" /> Undo last change</button></div>}
           </>}
         </div>}
 
-        {current === "notes" && <div className="therapist-panel"><div className="therapist-panel-title"><div><h4>Session Notes</h4><p>Record or edit post-service notes for completed appointments.</p></div></div>{appointments.filter(a => a.status === "Completed").length === 0 ? <p className="therapist-empty">No completed sessions yet. Mark an ongoing session completed in My Appointments to add notes.</p> : appointments.filter(a => a.status === "Completed").map(a => <div className="therapist-note-entry" key={a.id}><div><strong>{a.client} — {a.service}</strong><small>{a.id} · {formatDate(a.date)} · {formatTime(a.time)}</small></div><label htmlFor={`note-${a.id}`}>Service notes</label><textarea id={`note-${a.id}`} rows="3" value={editingNotes[a.id] ?? a.notes} onChange={e => setEditingNotes(prev => ({ ...prev, [a.id]: e.target.value }))} placeholder="Enter factual service notes..."/><button type="button" className="therapist-btn primary" disabled={!(editingNotes[a.id] ?? a.notes).trim()} onClick={() => setPending({ kind: "note", id: a.id })}>{a.notes ? "Update Notes" : "Save Notes"}</button></div>)}</div>}
 
         {current === "availability" && <div className="therapist-two-col"><div className="therapist-panel"><h4>Regular Availability</h4><p className="therapist-subtle">Choose your regular working days.</p><div className="therapist-day-options">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <label key={day}><input type="checkbox" checked={availableDays.includes(day)} onChange={e => setAvailableDays(cur => e.target.checked ? [...cur, day] : cur.filter(x => x !== day))}/> {day}</label>)}</div><button type="button" className="therapist-btn primary" onClick={() => setPending({ kind: "availability" })}>Save Availability</button></div>
           <div className="therapist-panel"><h4>Request Time Off</h4><form className="therapist-form" onSubmit={e => { e.preventDefault(); if (!offDate || !offReason.trim()) return; setPending({ kind: "timeOff", date: offDate, reason: offReason.trim() }); }}><label>Date <input type="date" required min={dateOffset(0)} value={offDate} onChange={e => setOffDate(e.target.value)} /></label><label>Reason <textarea required rows="3" value={offReason} onChange={e => setOffReason(e.target.value)} placeholder="Reason for requested time off"/></label><button className="therapist-btn primary" type="submit">Submit Request</button></form>{timeOff.length > 0 && <div className="therapist-requests"><h5>My Time-Off Requests</h5>{timeOff.map(t => <p key={t.id}>{formatDate(t.date)} — {t.reason} <Badge status={t.status}/></p>)}</div>}</div>
         </div>}
       </div>
     </main>
-    <ConfirmDialog pending={pending} onConfirm={confirmPending} onCancel={() => setPending(null)} cancelRef={cancelRef}/>
+    <ConfirmDialog pending={pending} onConfirm={confirmPending} onCancel={() => setPending(null)} onNoteChange={note => setPending(prev => prev && ["completeWithNotes", "editNote"].includes(prev.kind) ? { ...prev, note } : prev)} cancelRef={cancelRef}/>
   </div>;
 }

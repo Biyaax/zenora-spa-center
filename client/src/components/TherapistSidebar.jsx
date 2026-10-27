@@ -4,7 +4,6 @@ const items = [
   ["/therapist/dashboard", "fas fa-home", "Dashboard"],
   ["/therapist/schedule", "far fa-calendar-alt", "My Schedule"],
   ["/therapist/appointments", "fas fa-clipboard-list", "My Appointments"],
-  ["/therapist/notes", "far fa-sticky-note", "Service Notes"],
   ["/therapist/availability", "far fa-clock", "Availability & Time-Off"],
 ];
 
