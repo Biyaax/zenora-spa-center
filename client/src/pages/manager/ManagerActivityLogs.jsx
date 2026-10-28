@@ -19,9 +19,21 @@ import {
   useLoad,
 } from "../../components/manager/UI";
 
-/* =========================
+
+/* =========================================================
    HELPERS
-========================= */
+========================================================= */
+
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 
 function parseDetails(value) {
   if (
@@ -45,11 +57,13 @@ function parseDetails(value) {
   }
 }
 
+
 function logPersonName(log) {
   /*
-    Prefer the actor_name supplied by the
-    new activity-log backend.
-  */
+   * Prefer actor_name supplied by
+   * the activity-log backend.
+   */
+
   if (
     typeof log.actor_name ===
       "string" &&
@@ -59,8 +73,9 @@ function logPersonName(log) {
   }
 
   /*
-    Other aliases returned by the API.
-  */
+   * Other aliases returned by API.
+   */
+
   if (
     typeof log.user_name ===
       "string" &&
@@ -78,8 +93,9 @@ function logPersonName(log) {
   }
 
   /*
-    Standard first_name / last_name fields.
-  */
+   * Standard first_name / last_name.
+   */
+
   const directName = [
     log.first_name,
     log.last_name,
@@ -93,8 +109,9 @@ function logPersonName(log) {
   }
 
   /*
-    Nested user object fallback.
-  */
+   * Nested user object fallback.
+   */
+
   const nestedName = [
     log.user?.first_name,
     log.user?.last_name,
@@ -116,9 +133,10 @@ function logPersonName(log) {
   }
 
   /*
-    A NULL user_id can happen for an old log
-    whose user was deleted.
-  */
+   * NULL user_id can happen for an
+   * old log whose user was deleted.
+   */
+
   if (
     log.user_id === null ||
     log.user_id === undefined
@@ -128,6 +146,7 @@ function logPersonName(log) {
 
   return "Staff member (name unavailable)";
 }
+
 
 function logPersonRole(log) {
   return (
@@ -139,6 +158,7 @@ function logPersonRole(log) {
     "Role unavailable"
   );
 }
+
 
 function actionDescription(log) {
   const entity = String(
@@ -211,6 +231,29 @@ function actionDescription(log) {
     return "Spa Manager updated a service";
   }
 
+  /* Staff */
+
+  if (
+    entity === "staff" &&
+    action.includes("schedule")
+  ) {
+    return "Spa Manager updated a therapist schedule";
+  }
+
+  if (
+    entity === "staff" &&
+    action.includes("create")
+  ) {
+    return "Spa Manager added a staff account";
+  }
+
+  if (
+    entity === "staff" &&
+    action.includes("update")
+  ) {
+    return "Spa Manager updated a staff account";
+  }
+
   /* Therapist status */
 
   if (
@@ -245,14 +288,20 @@ function actionDescription(log) {
 
   if (
     entity === "appointment" &&
-    action.includes("check_in")
+    (
+      action.includes("check_in") ||
+      action.includes("check-in")
+    )
   ) {
     return "Receptionist checked in a client";
   }
 
   if (
     entity === "appointment" &&
-    action.includes("check_out")
+    (
+      action.includes("check_out") ||
+      action.includes("check-out")
+    )
   ) {
     return "Receptionist checked out a client";
   }
@@ -293,9 +342,696 @@ function actionDescription(log) {
   }`;
 }
 
-/* =========================
+
+/* =========================================================
+   DETAIL FORMATTERS
+========================================================= */
+
+function readableKey(value) {
+  return titleCase(
+    String(value || "")
+      .replaceAll("_", " ")
+      .replaceAll(".", " ")
+  );
+}
+
+
+function formatTime(value) {
+  if (!value) {
+    return "Not specified";
+  }
+
+  const [
+    rawHour,
+    rawMinute,
+  ] = String(value).split(":");
+
+  const hour =
+    Number(rawHour);
+
+  const minute =
+    Number(rawMinute || 0);
+
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute)
+  ) {
+    return String(value);
+  }
+
+  const date = new Date();
+
+  date.setHours(
+    hour,
+    minute,
+    0,
+    0
+  );
+
+  return date.toLocaleTimeString(
+    "en-PH",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }
+  );
+}
+
+
+function readableStatus(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "Not specified";
+  }
+
+  return titleCase(
+    String(value)
+      .replaceAll("_", " ")
+      .replaceAll("-", " ")
+  );
+}
+
+
+function formatDetailValue(
+  key,
+  value
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "Not specified";
+  }
+
+  /*
+   * Boolean-like database fields
+   */
+
+  if (
+    String(key).startsWith(
+      "is_"
+    )
+  ) {
+    return Number(value)
+      ? "Yes"
+      : "No";
+  }
+
+  if (
+    typeof value === "boolean"
+  ) {
+    return value
+      ? "Yes"
+      : "No";
+  }
+
+  /*
+   * Status
+   */
+
+  if (
+    String(key)
+      .toLowerCase()
+      .includes("status")
+  ) {
+    return readableStatus(
+      value
+    );
+  }
+
+  /*
+   * Times
+   */
+
+  if (
+    key === "start_time" ||
+    key === "end_time"
+  ) {
+    return formatTime(value);
+  }
+
+  /*
+   * Arrays of primitive values
+   */
+
+  if (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item !== "object"
+    )
+  ) {
+    return value
+      .map(
+        (item) =>
+          readableStatus(item)
+      )
+      .join(", ");
+  }
+
+  return String(value);
+}
+
+
+/* =========================================================
+   READABLE DETAILS COMPONENT
+========================================================= */
+
+function ActivityDetails({
+  details,
+}) {
+  const parsed =
+    parseDetails(details);
+
+  if (!parsed) {
+    return (
+      <span className="zm-small">
+        No additional details
+      </span>
+    );
+  }
+
+  /*
+   * Plain string details
+   */
+
+  if (
+    typeof parsed !== "object"
+  ) {
+    return (
+      <div
+        style={{
+          maxWidth: "420px",
+          padding: "12px 14px",
+          borderRadius: "8px",
+          background:
+            "#fffaf8",
+          border:
+            "1px solid #f1e2dc",
+          lineHeight: 1.6,
+        }}
+      >
+        {String(parsed)}
+      </div>
+    );
+  }
+
+  /*
+   * Therapist schedule
+   *
+   * Example:
+   * {
+   *   windows: [
+   *     {
+   *       day_of_week: 1,
+   *       start_time: "09:00",
+   *       end_time: "18:00"
+   *     }
+   *   ]
+   * }
+   */
+
+  if (
+    Array.isArray(
+      parsed.windows
+    )
+  ) {
+    if (
+      parsed.windows.length ===
+      0
+    ) {
+      return (
+        <div
+          style={{
+            maxWidth:
+              "420px",
+            padding:
+              "12px 14px",
+            borderRadius:
+              "8px",
+            background:
+              "#fffaf8",
+            border:
+              "1px solid #f1e2dc",
+          }}
+        >
+          <strong>
+            Weekly schedule cleared
+          </strong>
+
+          <div
+            className="zm-small"
+            style={{
+              marginTop:
+                "6px",
+            }}
+          >
+            No working hours
+            are assigned.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "430px",
+          padding: "14px",
+          borderRadius: "8px",
+          background:
+            "#fffaf8",
+          border:
+            "1px solid #f1e2dc",
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 700,
+            marginBottom:
+              "10px",
+          }}
+        >
+          Weekly Schedule
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gap: "8px",
+          }}
+        >
+          {parsed.windows.map(
+            (
+              window,
+              index
+            ) => {
+              const day =
+                WEEKDAYS[
+                  Number(
+                    window.day_of_week
+                  )
+                ] ||
+                `Day ${
+                  window.day_of_week
+                }`;
+
+              return (
+                <div
+                  key={`${window.day_of_week}-${window.start_time}-${index}`}
+                  style={{
+                    display:
+                      "grid",
+                    gridTemplateColumns:
+                      "100px 1fr",
+                    gap:
+                      "14px",
+                    alignItems:
+                      "center",
+                    paddingBottom:
+                      "7px",
+                    borderBottom:
+                      index ===
+                      parsed
+                        .windows
+                        .length -
+                        1
+                        ? "none"
+                        : "1px solid #f1e5e0",
+                  }}
+                >
+                  <span
+                    style={{
+                      color:
+                        "#6f6f6f",
+                    }}
+                  >
+                    {day}
+                  </span>
+
+                  <strong>
+                    {formatTime(
+                      window.start_time
+                    )}
+                    {" – "}
+                    {formatTime(
+                      window.end_time
+                    )}
+                  </strong>
+                </div>
+              );
+            }
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * Status-only log
+   */
+
+  if (
+    Object.prototype.hasOwnProperty.call(
+      parsed,
+      "status"
+    ) &&
+    Object.keys(parsed)
+      .length === 1
+  ) {
+    return (
+      <div
+        style={{
+          maxWidth: "420px",
+          padding: "12px 14px",
+          borderRadius: "8px",
+          background:
+            "#fffaf8",
+          border:
+            "1px solid #f1e2dc",
+        }}
+      >
+        <span
+          style={{
+            color: "#777",
+          }}
+        >
+          Status:
+        </span>{" "}
+
+        <strong>
+          {readableStatus(
+            parsed.status
+          )}
+        </strong>
+      </div>
+    );
+  }
+
+  /*
+   * Message-only log
+   */
+
+  if (
+    parsed.message &&
+    Object.keys(parsed)
+      .length === 1
+  ) {
+    return (
+      <div
+        style={{
+          maxWidth: "420px",
+          padding: "12px 14px",
+          borderRadius: "8px",
+          background:
+            "#fffaf8",
+          border:
+            "1px solid #f1e2dc",
+          lineHeight: 1.6,
+        }}
+      >
+        {parsed.message}
+      </div>
+    );
+  }
+
+  /*
+   * Generic readable object
+   */
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "430px",
+        padding: "12px 14px",
+        borderRadius: "8px",
+        background:
+          "#fffaf8",
+        border:
+          "1px solid #f1e2dc",
+      }}
+    >
+      {Object.entries(
+        parsed
+      ).map(
+        ([
+          key,
+          value,
+        ]) => {
+          /*
+           * Nested object
+           */
+
+          if (
+            value &&
+            typeof value ===
+              "object" &&
+            !Array.isArray(
+              value
+            )
+          ) {
+            return (
+              <div
+                key={key}
+                style={{
+                  padding:
+                    "8px 0",
+                  borderBottom:
+                    "1px solid #f1e5e0",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight:
+                      700,
+                    marginBottom:
+                      "6px",
+                  }}
+                >
+                  {readableKey(
+                    key
+                  )}
+                </div>
+
+                {Object.entries(
+                  value
+                ).map(
+                  ([
+                    childKey,
+                    childValue,
+                  ]) => (
+                    <div
+                      key={
+                        childKey
+                      }
+                      style={{
+                        display:
+                          "grid",
+                        gridTemplateColumns:
+                          "120px 1fr",
+                        gap:
+                          "12px",
+                        marginTop:
+                          "5px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          color:
+                            "#777",
+                        }}
+                      >
+                        {readableKey(
+                          childKey
+                        )}
+                      </span>
+
+                      <strong>
+                        {formatDetailValue(
+                          childKey,
+                          childValue
+                        )}
+                      </strong>
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          }
+
+          /*
+           * Array containing objects
+           */
+
+          if (
+            Array.isArray(
+              value
+            ) &&
+            value.some(
+              (item) =>
+                item &&
+                typeof item ===
+                  "object"
+            )
+          ) {
+            return (
+              <div
+                key={key}
+                style={{
+                  padding:
+                    "8px 0",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight:
+                      700,
+                    marginBottom:
+                      "6px",
+                  }}
+                >
+                  {readableKey(
+                    key
+                  )}
+                </div>
+
+                {value.map(
+                  (
+                    item,
+                    index
+                  ) => (
+                    <div
+                      key={
+                        index
+                      }
+                      style={{
+                        padding:
+                          "8px 10px",
+                        marginBottom:
+                          "6px",
+                        background:
+                          "#fff",
+                        border:
+                          "1px solid #eee0db",
+                        borderRadius:
+                          "6px",
+                      }}
+                    >
+                      {item &&
+                      typeof item ===
+                        "object"
+                        ? Object.entries(
+                            item
+                          ).map(
+                            ([
+                              childKey,
+                              childValue,
+                            ]) => (
+                              <div
+                                key={
+                                  childKey
+                                }
+                                style={{
+                                  display:
+                                    "grid",
+                                  gridTemplateColumns:
+                                    "120px 1fr",
+                                  gap:
+                                    "12px",
+                                  margin:
+                                    "4px 0",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color:
+                                      "#777",
+                                  }}
+                                >
+                                  {readableKey(
+                                    childKey
+                                  )}
+                                </span>
+
+                                <strong>
+                                  {formatDetailValue(
+                                    childKey,
+                                    childValue
+                                  )}
+                                </strong>
+                              </div>
+                            )
+                          )
+                        : String(
+                            item
+                          )}
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          }
+
+          /*
+           * Normal field
+           */
+
+          return (
+            <div
+              key={key}
+              style={{
+                display:
+                  "grid",
+                gridTemplateColumns:
+                  "130px 1fr",
+                gap: "12px",
+                padding:
+                  "7px 0",
+                borderBottom:
+                  "1px solid #f1e5e0",
+              }}
+            >
+              <span
+                style={{
+                  color:
+                    "#777",
+                }}
+              >
+                {readableKey(
+                  key
+                )}
+              </span>
+
+              <strong
+                style={{
+                  wordBreak:
+                    "break-word",
+                }}
+              >
+                {formatDetailValue(
+                  key,
+                  value
+                )}
+              </strong>
+            </div>
+          );
+        }
+      )}
+    </div>
+  );
+}
+
+
+/* =========================================================
    COMPONENT
-========================= */
+========================================================= */
 
 export default function ManagerActivityLogs() {
   const [
@@ -328,15 +1064,11 @@ export default function ManagerActivityLogs() {
     setPage,
   ] = useState(1);
 
-  /*
-    IMPORTANT:
 
-    We ONLY load activity logs now.
+  /* =======================================================
+     LOAD ACTIVITY LOGS
+  ======================================================= */
 
-    We do NOT load /therapists because
-    every activity log already contains
-    the actor's name and role.
-  */
   const {
     data,
     loading,
@@ -351,7 +1083,8 @@ export default function ManagerActivityLogs() {
 
       return {
         logs:
-          response.logs || [],
+          response.logs ||
+          [],
       };
     },
     []
@@ -360,9 +1093,10 @@ export default function ManagerActivityLogs() {
   const rows =
     data?.logs || [];
 
-  /* =========================
+
+  /* =======================================================
      FILTER OPTIONS
-  ========================= */
+  ======================================================= */
 
   const actions =
     useMemo(
@@ -391,6 +1125,7 @@ export default function ManagerActivityLogs() {
       [rows]
     );
 
+
   const users =
     useMemo(
       () => [
@@ -405,9 +1140,10 @@ export default function ManagerActivityLogs() {
       [rows]
     );
 
-  /* =========================
+
+  /* =======================================================
      FILTERING
-  ========================= */
+  ======================================================= */
 
   const filtered =
     useMemo(
@@ -510,9 +1246,10 @@ export default function ManagerActivityLogs() {
       ]
     );
 
-  /* =========================
+
+  /* =======================================================
      PAGINATION
-  ========================= */
+  ======================================================= */
 
   const pages =
     Math.max(
@@ -537,6 +1274,7 @@ export default function ManagerActivityLogs() {
       currentPage * 10
     );
 
+
   const change =
     (setter) =>
     (event) => {
@@ -547,9 +1285,10 @@ export default function ManagerActivityLogs() {
       setPage(1);
     };
 
-  /* =========================
+
+  /* =======================================================
      RENDER
-  ========================= */
+  ======================================================= */
 
   return (
     <>
@@ -559,7 +1298,13 @@ export default function ManagerActivityLogs() {
       />
 
       <Card>
+
+        {/* ===============================================
+            FILTERS
+        =============================================== */}
+
         <div className="zm-toolbar zm-log-filters">
+
           <label>
             Search
 
@@ -571,6 +1316,7 @@ export default function ManagerActivityLogs() {
               placeholder="Search staff or activity"
             />
           </label>
+
 
           <label>
             Action
@@ -584,9 +1330,7 @@ export default function ManagerActivityLogs() {
               {actions.map(
                 (item) => (
                   <option
-                    key={
-                      item
-                    }
+                    key={item}
                   >
                     {item}
                   </option>
@@ -594,6 +1338,7 @@ export default function ManagerActivityLogs() {
               )}
             </select>
           </label>
+
 
           <label>
             Staff member
@@ -607,9 +1352,7 @@ export default function ManagerActivityLogs() {
               {users.map(
                 (item) => (
                   <option
-                    key={
-                      item
-                    }
+                    key={item}
                   >
                     {item}
                   </option>
@@ -617,6 +1360,7 @@ export default function ManagerActivityLogs() {
               )}
             </select>
           </label>
+
 
           <label>
             From
@@ -629,6 +1373,7 @@ export default function ManagerActivityLogs() {
               )}
             />
           </label>
+
 
           <label>
             To
@@ -643,12 +1388,22 @@ export default function ManagerActivityLogs() {
           </label>
         </div>
 
+
+        {/* ===============================================
+            ERROR
+        =============================================== */}
+
         {error && (
           <ErrorState
             message={error}
             onRetry={retry}
           />
         )}
+
+
+        {/* ===============================================
+            TABLE
+        =============================================== */}
 
         {loading ? (
           <Loading />
@@ -677,8 +1432,7 @@ export default function ManagerActivityLogs() {
                         "object"
                         ? Object.keys(
                             details
-                          )
-                            .length >
+                          ).length >
                           0
                         : Boolean(
                             details
@@ -690,6 +1444,9 @@ export default function ManagerActivityLogs() {
                           row.id
                         }
                       >
+
+                        {/* WHO */}
+
                         <td>
                           <strong>
                             {logPersonName(
@@ -704,11 +1461,17 @@ export default function ManagerActivityLogs() {
                           </div>
                         </td>
 
+
+                        {/* WHAT */}
+
                         <td>
                           {actionDescription(
                             row
                           )}
                         </td>
+
+
+                        {/* DATE */}
 
                         <td>
                           {dateTimeText(
@@ -716,31 +1479,48 @@ export default function ManagerActivityLogs() {
                           )}
                         </td>
 
+
+                        {/* DETAILS */}
+
                         <td>
                           {hasDetails ? (
-                            <details>
-                              <summary>
-                                View
-                                details
+                            <details
+                              style={{
+                                maxWidth:
+                                  "450px",
+                              }}
+                            >
+                              <summary
+                                style={{
+                                  cursor:
+                                    "pointer",
+                                  fontWeight:
+                                    600,
+                                  color:
+                                    "#a45f4c",
+                                  userSelect:
+                                    "none",
+                                }}
+                              >
+                                View details
                               </summary>
 
-                              <pre className="zm-details">
-                                {typeof details ===
-                                "object"
-                                  ? JSON.stringify(
-                                      details,
-                                      null,
-                                      2
-                                    )
-                                  : String(
-                                      details
-                                    )}
-                              </pre>
+                              <div
+                                style={{
+                                  marginTop:
+                                    "10px",
+                                }}
+                              >
+                                <ActivityDetails
+                                  details={
+                                    row.details
+                                  }
+                                />
+                              </div>
                             </details>
                           ) : (
                             <span className="zm-small">
-                              No
-                              additional
+                              No additional
                               details
                             </span>
                           )}
@@ -751,26 +1531,38 @@ export default function ManagerActivityLogs() {
                 )}
               </DataTable>
 
+
+              {/* =========================================
+                  PAGINATION
+              ========================================= */}
+
               <div className="zm-pagination">
+
                 <span>
                   Showing{" "}
+
                   {filtered.length
                     ? (currentPage -
                         1) *
                         10 +
                       1
                     : 0}
-                  –
+
+                  {" – "}
+
                   {Math.min(
                     currentPage *
                       10,
                     filtered.length
-                  )}{" "}
-                  of{" "}
+                  )}
+
+                  {" of "}
+
                   {
                     filtered.length
                   }
                 </span>
+
 
                 <Button
                   kind="outline"
@@ -791,6 +1583,7 @@ export default function ManagerActivityLogs() {
                   Previous
                 </Button>
 
+
                 <span>
                   Page{" "}
                   {
@@ -798,6 +1591,7 @@ export default function ManagerActivityLogs() {
                   }{" "}
                   of {pages}
                 </span>
+
 
                 <Button
                   kind="outline"
@@ -817,10 +1611,12 @@ export default function ManagerActivityLogs() {
                 >
                   Next
                 </Button>
+
               </div>
             </>
           )
         )}
+
       </Card>
     </>
   );
