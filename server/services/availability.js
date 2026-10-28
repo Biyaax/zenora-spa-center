@@ -497,6 +497,12 @@ async function resolveBooking({
     startMinutes +
     service.duration_minutes;
 
+  if (startMinutes % config.slotStepMinutes !== 0) {
+    throw badRequest("Please choose a time from the available 30-minute slots.", {
+      fields: { time: "Please choose a time from the available slots." },
+    });
+  }
+
   if (
     startMinutes <
     earliestStart(

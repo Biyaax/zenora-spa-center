@@ -4,6 +4,8 @@ const bcrypt = require("bcryptjs");
 const db = require("../database/postgres");
 const token = require("../lib/token");
 const v = require("../lib/validate");
+const { registrationFields } = require("../lib/registration");
+const { requireMailDomain } = require("../services/emailDomain");
 
 const emailVerification = require(
   "../services/emailVerification"
@@ -114,58 +116,7 @@ function recordFailure(key) {
 router.post(
   "/register",
   async (req, res) => {
-    const firstName =
-      v.text(
-        req.body.firstName,
-        "First name",
-        {
-          max: 80,
-        }
-      );
-
-    const lastName =
-      v.text(
-        req.body.lastName,
-        "Last name",
-        {
-          max: 80,
-        }
-      );
-
-    const email =
-      v.email(
-        req.body.email
-      );
-
-    const phone =
-      v.phone(
-        req.body.phone,
-        "Phone",
-        {
-          required: true,
-        }
-      );
-
-    const password =
-      req.body.password;
-
-    if (
-      typeof password !==
-        "string" ||
-      password.length < 8
-    ) {
-      throw badRequest(
-        "Password must be at least 8 characters."
-      );
-    }
-
-    if (
-      password.length > 72
-    ) {
-      throw badRequest(
-        "Password must be 72 characters or fewer."
-      );
-    }
+    const { firstName, lastName, email, phone, password } = registrationFields(req.body);
 
     /*
      * Check whether the email already exists.
@@ -196,14 +147,20 @@ router.post(
         ) !== 1
       ) {
         throw conflict(
-          "This email is already registered but has not been verified. Please resend the verification email."
+          "This email is already registered but has not been verified. Please resend the verification email.",
+          { fields: { email: "This email is already registered. Please resend its verification email." } }
         );
       }
 
       throw conflict(
-        "An account with this email already exists."
+        "An account with this email already exists.",
+        { fields: { email: "An account with this email already exists." } }
       );
     }
+
+    // DNS checks reject invalid mail domains; clicking the emailed link
+    // is still required to prove access to this particular mailbox.
+    await requireMailDomain(email);
 
     /*
      * Public registration creates Guest only.
@@ -322,7 +279,8 @@ router.post(
         error.code === "23505"
       ) {
         throw conflict(
-          "An account with this email already exists."
+          "An account with this email already exists.",
+          { fields: { email: "An account with this email already exists." } }
         );
       }
 
@@ -465,6 +423,7 @@ router.get(
 router.post(
   "/resend-verification",
   async (req, res) => {
+    v.object(req.body);
     const email =
       v.email(
         req.body.email
@@ -535,26 +494,8 @@ router.post(
    Every role must have email_verified = 1.
 ========================================================= */
 
-router.post(
-  "/login",
-  async (req, res) => {
-    const email =
-      v.email(
-        req.body.email
-      );
-
-    const password =
-      req.body.password;
-
-    if (
-      typeof password !==
-        "string" ||
-      !password
-    ) {
-      throw badRequest(
-        "Password is required."
-      );
-    }
+async function login(req, res) {
+    const { email, password } = v.loginFields(req.body);
 
     const key =
       `${email}|${req.ip}`;
@@ -602,7 +543,8 @@ router.post(
     if (
       !row ||
       !valid ||
-      !row.is_active
+      !row.is_active ||
+      (req.path === "/staff/login" && !["Spa Manager", "Receptionist", "Massage Therapist"].includes(row.role))
     ) {
       recordFailure(key);
 
@@ -647,8 +589,10 @@ router.post(
       user:
         publicUser(row),
     });
-  }
-);
+}
+
+router.post("/login", login);
+router.post("/staff/login", login);
 
 /* =========================================================
    CURRENT USER

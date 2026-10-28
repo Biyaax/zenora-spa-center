@@ -258,6 +258,9 @@ function AuthProvider({ children }) {
 
             password:
               formData.password,
+
+            confirmPassword:
+              formData.confirmPassword,
           },
         }
       );

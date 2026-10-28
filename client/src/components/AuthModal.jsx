@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { validateStaffLogin } from "../utils/validation";
+import { normalizePhPhone, validateRegistration } from "../utils/registrationValidation";
+import "./AuthModal.css";
 
 function AuthModal({ isOpen, onClose }) {
   const {
@@ -33,6 +36,41 @@ function AuthModal({ isOpen, onClose }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
+  const registerFormRef = useRef(null);
+  const [touched, setTouched] = useState({});
+  const [serverFields, setServerFields] = useState({});
+  const loginErrors = validateStaffLogin(loginData.email, loginData.password);
+  const registerErrors = { ...validateRegistration(registerData), ...serverFields };
+
+  function validationProps(scope, field) {
+    const errors = scope === "register" ? registerErrors : loginErrors;
+    const invalid = Boolean(touched[`${scope}.${field}`] && errors[field]);
+    return {
+      onBlur: () => setTouched((current) => ({ ...current, [`${scope}.${field}`]: true })),
+      "aria-invalid": invalid,
+      "aria-describedby": invalid ? `auth-${scope}-${field}-error` :
+        scope === "register" && ["email", "phone", "password"].includes(field) ? `auth-${field}-help` : undefined,
+    };
+  }
+
+  function fieldError(scope, field) {
+    const errors = scope === "register" ? registerErrors : loginErrors;
+    return touched[`${scope}.${field}`] && errors[field] ? (
+      <div id={`auth-${scope}-${field}-error`} className="text-danger small mt-1">{errors[field]}</div>
+    ) : null;
+  }
+
+  function showInvalidFields(event, scope, errors) {
+    const fields = scope === "register" ? Object.keys(registerData) : Object.keys(loginData);
+    setTouched((current) => ({ ...current, ...Object.fromEntries(fields.map((field) => [`${scope}.${field}`, true])) }));
+    if (Object.keys(errors).length) {
+      setError("Please correct the highlighted fields.");
+      event.currentTarget.elements.namedItem(Object.keys(errors)[0])?.focus();
+      return true;
+    }
+    return false;
+  }
 
   // Password visibility
   const [showLoginPassword, setShowLoginPassword] =
@@ -53,12 +91,14 @@ function AuthModal({ isOpen, onClose }) {
   ======================================================= */
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
+    if (!isOpen) return;
 
     const handleEscape = (event) => {
-      if (event.key === "Escape" && !busy) {
+      if (event.key === "Escape" && !busy && !submittingRef.current) {
+        setMessage("");
+        setError("");
+        setTouched({});
+        setServerFields({});
         onClose();
       }
     };
@@ -85,11 +125,11 @@ function AuthModal({ isOpen, onClose }) {
   }, [isOpen, onClose, busy]);
 
   useEffect(() => {
-    if (isOpen) {
-      setMessage("");
-      setError("");
+    const firstField = Object.keys(serverFields)[0];
+    if (isOpen && mode === "register" && !busy && firstField) {
+      registerFormRef.current?.elements.namedItem(firstField)?.focus();
     }
-  }, [mode, isOpen]);
+  }, [isOpen, mode, busy, serverFields]);
 
   if (!isOpen) {
     return null;
@@ -109,6 +149,7 @@ function AuthModal({ isOpen, onClose }) {
 
     setMessage("");
     setError("");
+    setServerFields({});
   };
 
   const handleRegisterChange = (event) => {
@@ -121,6 +162,7 @@ function AuthModal({ isOpen, onClose }) {
 
     setMessage("");
     setError("");
+    setServerFields({});
   };
 
   /* =======================================================
@@ -130,24 +172,18 @@ function AuthModal({ isOpen, onClose }) {
   const handleLoginSubmit = async (event) => {
     event.preventDefault();
 
-    if (busy) {
+    if (busy || submittingRef.current) {
       return;
     }
 
     setMessage("");
     setError("");
 
-    const email = loginData.email.trim();
+    const email = loginData.email.trim().toLowerCase();
     const password = loginData.password;
 
-    if (!email || !password) {
-      setError(
-        "Please enter your email and password."
-      );
-
-      return;
-    }
-
+    if (showInvalidFields(event, "login", loginErrors)) return;
+    submittingRef.current = true;
     setBusy(true);
 
     try {
@@ -163,6 +199,8 @@ function AuthModal({ isOpen, onClose }) {
       setError("");
       setMessage("");
 
+      setTouched({});
+      setServerFields({});
       onClose();
     } catch (err) {
       setError(
@@ -170,6 +208,7 @@ function AuthModal({ isOpen, onClose }) {
           "Unable to log in. Please try again."
       );
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -181,7 +220,7 @@ function AuthModal({ isOpen, onClose }) {
   const handleRegisterSubmit = async (event) => {
     event.preventDefault();
 
-    if (busy) {
+    if (busy || submittingRef.current) {
       return;
     }
 
@@ -201,7 +240,7 @@ function AuthModal({ isOpen, onClose }) {
           .toLowerCase(),
 
       phone:
-        registerData.phone.trim(),
+        normalizePhPhone(registerData.phone),
 
       password:
         registerData.password,
@@ -210,30 +249,10 @@ function AuthModal({ isOpen, onClose }) {
         registerData.confirmPassword,
     };
 
-    if (
-      !cleanedData.firstName ||
-      !cleanedData.lastName ||
-      !cleanedData.email ||
-      !cleanedData.phone ||
-      !cleanedData.password ||
-      !cleanedData.confirmPassword
-    ) {
-      setError(
-        "Please complete all required fields."
-      );
-
-      return;
-    }
-
-    if (
-      cleanedData.password !==
-      cleanedData.confirmPassword
-    ) {
-      setError("Passwords do not match.");
-
-      return;
-    }
-
+    setServerFields({});
+    const registrationErrors = validateRegistration(registerData);
+    if (showInvalidFields(event, "register", registrationErrors)) return;
+    submittingRef.current = true;
     setBusy(true);
 
     try {
@@ -241,6 +260,8 @@ function AuthModal({ isOpen, onClose }) {
         cleanedData
       );
 
+      setTouched({});
+      setServerFields({});
       setVerificationEmail(
         result?.email ||
           cleanedData.email
@@ -269,11 +290,14 @@ function AuthModal({ isOpen, onClose }) {
        */
       setMode("verify");
     } catch (err) {
+      const fields = err?.details?.fields || {};
+      setServerFields(fields);
       setError(
         err?.message ||
           "Unable to create your account. Please try again."
       );
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -284,7 +308,7 @@ function AuthModal({ isOpen, onClose }) {
 
   const handleResend = async () => {
     if (
-      busy ||
+      busy || submittingRef.current ||
       !verificationEmail
     ) {
       return;
@@ -292,6 +316,7 @@ function AuthModal({ isOpen, onClose }) {
 
     setMessage("");
     setError("");
+    submittingRef.current = true;
     setBusy(true);
 
     try {
@@ -310,6 +335,7 @@ function AuthModal({ isOpen, onClose }) {
           "Unable to resend the verification email."
       );
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -319,32 +345,38 @@ function AuthModal({ isOpen, onClose }) {
   ======================================================= */
 
   const showLogin = () => {
-    if (busy) {
+    if (busy || submittingRef.current) {
       return;
     }
 
     setMode("login");
     setMessage("");
     setError("");
+    setTouched({});
+    setServerFields({});
 
     setShowRegisterPassword(false);
     setShowConfirmPassword(false);
   };
 
   const showRegister = () => {
-    if (busy) {
+    if (busy || submittingRef.current) {
       return;
     }
 
     setMode("register");
     setMessage("");
     setError("");
+    setTouched({});
+    setServerFields({});
 
     setShowLoginPassword(false);
   };
 
   const closeModal = () => {
-    if (!busy) {
+    if (!busy && !submittingRef.current) {
+      setTouched({});
+      setServerFields({});
       setMessage("");
       setError("");
 
@@ -440,7 +472,7 @@ function AuthModal({ isOpen, onClose }) {
               </p>
             </div>
 
-            <form
+            <form noValidate aria-busy={busy}
               onSubmit={
                 handleLoginSubmit
               }
@@ -452,6 +484,10 @@ function AuthModal({ isOpen, onClose }) {
 
                 <input
                   id="modal-login-email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  {...validationProps("login", "email")}
+                  maxLength={254}
                   type="email"
                   name="email"
                   value={
@@ -466,6 +502,7 @@ function AuthModal({ isOpen, onClose }) {
                   disabled={busy}
                   required
                 />
+                {fieldError("login", "email")}
               </div>
 
               <div className="form-group">
@@ -480,6 +517,8 @@ function AuthModal({ isOpen, onClose }) {
                 >
                   <input
                     id="modal-login-password"
+                    {...validationProps("login", "password")}
+                    maxLength={4096}
                     type={
                       showLoginPassword
                         ? "text"
@@ -535,6 +574,7 @@ function AuthModal({ isOpen, onClose }) {
                     />
                   </button>
                 </div>
+                {fieldError("login", "password")}
               </div>
 
               <div className="d-flex justify-content-between align-items-center mb-4">
@@ -565,13 +605,13 @@ function AuthModal({ isOpen, onClose }) {
               </div>
 
               {error && (
-                <p className="text-danger text-center">
+                <p className="text-danger text-center" role="alert">
                   {error}
                 </p>
               )}
 
               {message && (
-                <p className="text-success text-center">
+                <p className="text-success text-center" role="status">
                   {message}
                 </p>
               )}
@@ -630,7 +670,7 @@ function AuthModal({ isOpen, onClose }) {
               </p>
             </div>
 
-            <form
+            <form ref={registerFormRef} noValidate aria-busy={busy}
               onSubmit={
                 handleRegisterSubmit
               }
@@ -644,6 +684,8 @@ function AuthModal({ isOpen, onClose }) {
 
                     <input
                       id="modal-first-name"
+                      {...validationProps("register", "firstName")}
+                      maxLength={80}
                       type="text"
                       name="firstName"
                       value={
@@ -659,6 +701,7 @@ function AuthModal({ isOpen, onClose }) {
                       disabled={busy}
                       required
                     />
+                    {fieldError("register", "firstName")}
                   </div>
                 </div>
 
@@ -670,6 +713,8 @@ function AuthModal({ isOpen, onClose }) {
 
                     <input
                       id="modal-last-name"
+                      {...validationProps("register", "lastName")}
+                      maxLength={80}
                       type="text"
                       name="lastName"
                       value={
@@ -685,6 +730,7 @@ function AuthModal({ isOpen, onClose }) {
                       disabled={busy}
                       required
                     />
+                    {fieldError("register", "lastName")}
                   </div>
                 </div>
               </div>
@@ -696,6 +742,10 @@ function AuthModal({ isOpen, onClose }) {
 
                 <input
                   id="modal-register-email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  {...validationProps("register", "email")}
+                  maxLength={254}
                   type="email"
                   name="email"
                   value={
@@ -710,6 +760,8 @@ function AuthModal({ isOpen, onClose }) {
                   disabled={busy}
                   required
                 />
+                {fieldError("register", "email")}
+                <small id="auth-email-help" className="text-muted d-block mt-1">Use an email you can open. You must verify the emailed link before signing in.</small>
               </div>
 
               <div className="form-group">
@@ -719,6 +771,8 @@ function AuthModal({ isOpen, onClose }) {
 
                 <input
                   id="modal-phone"
+                  {...validationProps("register", "phone")}
+                  maxLength={30}
                   type="tel"
                   name="phone"
                   value={
@@ -733,6 +787,8 @@ function AuthModal({ isOpen, onClose }) {
                   disabled={busy}
                   required
                 />
+                {fieldError("register", "phone")}
+                <small id="auth-phone-help" className="text-muted d-block mt-1">09XXXXXXXXX or +639XXXXXXXXX</small>
               </div>
 
               <div className="form-row">
@@ -749,6 +805,8 @@ function AuthModal({ isOpen, onClose }) {
                     >
                       <input
                         id="modal-register-password"
+                        {...validationProps("register", "password")}
+                        maxLength={72}
                         type={
                           showRegisterPassword
                             ? "text"
@@ -805,6 +863,8 @@ function AuthModal({ isOpen, onClose }) {
                         />
                       </button>
                     </div>
+                    {fieldError("register", "password")}
+                    <small id="auth-password-help" className="text-muted d-block mt-1">At least 8 characters. Very long passwords with emojis may exceed the limit.</small>
                   </div>
                 </div>
 
@@ -821,6 +881,8 @@ function AuthModal({ isOpen, onClose }) {
                     >
                       <input
                         id="modal-confirm-password"
+                        {...validationProps("register", "confirmPassword")}
+                        maxLength={72}
                         type={
                           showConfirmPassword
                             ? "text"
@@ -877,12 +939,13 @@ function AuthModal({ isOpen, onClose }) {
                         />
                       </button>
                     </div>
+                    {fieldError("register", "confirmPassword")}
                   </div>
                 </div>
               </div>
 
               {error && (
-                <p className="text-danger text-center">
+                <p className="text-danger text-center" role="alert">
                   {error}
                 </p>
               )}
@@ -942,8 +1005,7 @@ function AuthModal({ isOpen, onClose }) {
 
               {verificationEmail && (
                 <p className="mb-4">
-                  We sent the verification
-                  link to:
+                  Email address to verify:
                   <br />
 
                   <strong>
@@ -959,13 +1021,13 @@ function AuthModal({ isOpen, onClose }) {
               </p>
 
               {error && (
-                <p className="text-danger">
+                <p className="text-danger" role="alert">
                   {error}
                 </p>
               )}
 
               {message && (
-                <p className="text-success">
+                <p className="text-success" role="status">
                   {message}
                 </p>
               )}

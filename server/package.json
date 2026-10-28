@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "db:setup": "node database/setup-postgres.js"
+    "db:setup": "node database/setup-postgres.js",
+    "test": "node --test test/auth.test.js test/availability.test.js test/validation.test.js test/registration.test.js test/emailDomain.test.js test/verification.test.js test/mailer.test.js"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,20 @@
+.appointment-validation-form .form-control,
+.appointment-validation-form .custom-select {
+  color: #fff;
+  color-scheme: dark;
+}
+
+.appointment-validation-form .form-control::placeholder {
+  color: #e0e0e0;
+  opacity: 1;
+}
+
+.appointment-validation-form .custom-select option {
+  color: #212529;
+  background: #fff;
+}
+
+.appointment-validation-form [aria-invalid="true"] {
+  border-color: #ffb4b4;
+  box-shadow: 0 0 0 1px #ffb4b4;
+}

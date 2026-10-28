@@ -3,7 +3,7 @@ const express = require("express");
 const db = require("../database/postgres");
 const config = require("../config");
 const { getSlots } = require("../services/availability");
-const { badRequest } = require("../lib/errors");
+const v = require("../lib/validate");
 
 const router = express.Router();
 
@@ -77,16 +77,7 @@ router.get("/packages", async (req, res) => {
 ========================= */
 
 router.get("/therapists", async (req, res) => {
-  const serviceId = req.query.serviceId
-    ? Number(req.query.serviceId)
-    : null;
-
-  if (
-    req.query.serviceId &&
-    (!Number.isInteger(serviceId) || serviceId <= 0)
-  ) {
-    throw badRequest("Invalid service.");
-  }
+  const serviceId = v.optionalId(req.query.serviceId, "Service");
 
   const params = [];
   let serviceFilter = "";
@@ -138,6 +129,7 @@ router.get("/therapists", async (req, res) => {
 router.get("/hours", (req, res) => {
   res.json({
     success: true,
+    timezone: config.timezone,
     hours: config.hours,
     slotStepMinutes: config.slotStepMinutes,
     onlineLeadMinutes: config.onlineLeadMinutes,
@@ -149,23 +141,9 @@ router.get("/hours", (req, res) => {
 ========================= */
 
 router.get("/availability", async (req, res) => {
-  const serviceId = Number(req.query.serviceId);
+  const serviceId = v.id(req.query.serviceId, "Service");
   const date = req.query.date;
-
-  const therapistId = req.query.therapistId
-    ? Number(req.query.therapistId)
-    : null;
-
-  if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    throw badRequest("Please choose a valid service.");
-  }
-
-  if (
-    therapistId !== null &&
-    (!Number.isInteger(therapistId) || therapistId <= 0)
-  ) {
-    throw badRequest("Please choose a valid therapist.");
-  }
+  const therapistId = v.optionalId(req.query.therapistId, "Therapist");
 
   const result = await getSlots({
     serviceId,

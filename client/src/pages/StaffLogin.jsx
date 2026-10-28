@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { staffLogin } from "../api/staffAuth";
+import { validateStaffLogin } from "../utils/validation";
 
 const STAFF_ROUTES = {
   "Spa Manager": "/manager/dashboard",
@@ -21,15 +22,25 @@ function StaffLogin() {
   const [loading, setLoading] =
     useState(false);
 
+  const submittingRef = useRef(false);
+  const [touched, setTouched] = useState({});
+  const errors = validateStaffLogin(email, password);
+
   const handleLogin = async (event) => {
     event.preventDefault();
-
+    if (submittingRef.current) return;
     setError("");
+    setTouched({ email: true, password: true });
+    if (Object.keys(errors).length) {
+      event.currentTarget.elements.namedItem(Object.keys(errors)[0])?.focus();
+      return;
+    }
+    submittingRef.current = true;
     setLoading(true);
 
     try {
       const data = await staffLogin(
-        email,
+        email.trim().toLowerCase(),
         password
       );
 
@@ -74,6 +85,7 @@ function StaffLogin() {
           "Unable to log in."
       );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -95,7 +107,7 @@ function StaffLogin() {
           Massage Therapist
         </p>
 
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleLogin} noValidate aria-busy={loading}>
           <div className="form-group">
             <label htmlFor="staff-email">
               Email
@@ -103,18 +115,27 @@ function StaffLogin() {
 
             <input
               id="staff-email"
+              name="email"
+              maxLength={254}
+              autoCapitalize="none"
+              spellCheck={false}
+              onBlur={() => setTouched((current) => ({ ...current, email: true }))}
+              aria-invalid={Boolean(touched.email && errors.email)}
+              aria-describedby={touched.email && errors.email ? "staff-email-error" : undefined}
               type="email"
               className="form-control"
               value={email}
-              onChange={(event) =>
-                setEmail(
-                  event.target.value
-                )
-              }
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setError("");
+              }}
               autoComplete="email"
               disabled={loading}
               required
             />
+            {touched.email && errors.email && (
+              <div id="staff-email-error" className="text-danger small mt-1">{errors.email}</div>
+            )}
           </div>
 
           <div className="form-group">
@@ -129,6 +150,11 @@ function StaffLogin() {
             >
               <input
                 id="staff-password"
+                name="password"
+                maxLength={4096}
+                onBlur={() => setTouched((current) => ({ ...current, password: true }))}
+                aria-invalid={Boolean(touched.password && errors.password)}
+                aria-describedby={touched.password && errors.password ? "staff-password-error" : undefined}
                 type={
                   showPassword
                     ? "text"
@@ -136,11 +162,10 @@ function StaffLogin() {
                 }
                 className="form-control"
                 value={password}
-                onChange={(event) =>
-                  setPassword(
-                    event.target.value
-                  )
-                }
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError("");
+                }}
                 autoComplete="current-password"
                 disabled={loading}
                 style={{
@@ -151,6 +176,8 @@ function StaffLogin() {
 
               <button
                 type="button"
+                aria-controls="staff-password"
+                aria-pressed={showPassword}
                 onClick={() =>
                   setShowPassword(
                     (current) =>
@@ -196,6 +223,9 @@ function StaffLogin() {
                 />
               </button>
             </div>
+            {touched.password && errors.password && (
+              <div id="staff-password-error" className="text-danger small mt-1">{errors.password}</div>
+            )}
           </div>
 
           {error && (

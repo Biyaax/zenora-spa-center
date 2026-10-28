@@ -29,12 +29,12 @@ async function readResponse(
 
   if (
     !response.ok ||
-    data.success === false
+    !data || data.success === false
   ) {
-    throw new Error(
-      data.message ||
-        "Request failed."
-    );
+    const error = new Error(data?.message || "Request failed.");
+    error.status = response.status;
+    error.details = data?.details;
+    throw error;
   }
 
   return data;
@@ -44,23 +44,16 @@ export async function staffLogin(
   email,
   password
 ) {
-  const response =
-    await fetch(
-      `${API_URL}/api/auth/login`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      }
-    );
+  let response;
+  try {
+    response = await fetch(`${API_URL}/api/auth/staff/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (cause) {
+    throw new Error("Cannot reach the server. Please check your connection.", { cause });
+  }
 
   const data =
     await readResponse(

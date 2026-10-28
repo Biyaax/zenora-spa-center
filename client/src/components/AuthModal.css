@@ -1,0 +1,4 @@
+.auth-modal input[aria-invalid="true"] {
+  border-color: #b32232;
+  box-shadow: 0 0 0 1px #b32232;
+}

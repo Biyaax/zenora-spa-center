@@ -34,7 +34,7 @@ function getTransporter() {
 
 /**
  * Sends an email. Never throws: returns { sent, reason }.
- * Without SMTP settings the message is printed to the server console.
+ * Without SMTP settings, delivery is skipped without logging verification links.
  */
 async function sendMail({ to, subject, text }) {
   if (!to) return { sent: false, reason: "No email address on file." };
@@ -42,9 +42,7 @@ async function sendMail({ to, subject, text }) {
   const active = getTransporter();
 
   if (!active) {
-    console.log(
-      `\n[email - SMTP not configured, not sent]\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`
-    );
+    console.warn("[email] SMTP is not configured; delivery was skipped.");
     return { sent: false, reason: "Email is not configured on the server." };
   }
 
