@@ -19,24 +19,24 @@ function Footer() {
               </Link>
 
               <p>
-                Aliquyam sed elitr elitr erat sed diam ipsum eirmod eos lorem
-                nonumy. Tempor sea ipsum diam sed clita dolore eos dolores magna
-                erat dolore sed stet justo et dolor.
+                 Zenora Spa & Massage Wellness Center offers a relaxing space where
+  guests can enjoy quality massage and wellness services designed to
+  promote comfort, relaxation, and overall well-being.
               </p>
 
               <p>
                 <i className="fa fa-map-marker-alt mr-2"></i>
-                123 Street, New York, USA
+                Caloocan City, Metro Manila, Philippines
               </p>
 
               <p>
                 <i className="fa fa-phone-alt mr-2"></i>
-                +012 345 67890
+                +63 9123456789
               </p>
 
               <p>
                 <i className="fa fa-envelope mr-2"></i>
-                info@example.com
+                zenora.spa.center@gmail.com
               </p>
 
               {/* Social Links */}
