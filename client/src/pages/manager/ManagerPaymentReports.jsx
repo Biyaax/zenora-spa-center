@@ -69,12 +69,15 @@ function downloadCsv(rows) {
     }
   );
 
-  const url = URL.createObjectURL(blob);
+  const url =
+    URL.createObjectURL(blob);
 
-  const anchor = document.createElement('a');
+  const anchor =
+    document.createElement('a');
 
   anchor.href = url;
-  anchor.download = 'zenora-revenue-report.csv';
+  anchor.download =
+    'zenora-revenue-report.csv';
 
   anchor.click();
 
@@ -83,11 +86,81 @@ function downloadCsv(rows) {
 
 
 /* =========================================================
+   DATE / PERIOD FILTER
+========================================================= */
+
+function isInSelectedPeriod(
+  value,
+  period,
+  anchor
+) {
+  const raw = String(
+    value || ''
+  ).slice(0, 10);
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(raw)
+  ) {
+    return false;
+  }
+
+  const selected =
+    new Date(
+      `${anchor}T12:00:00`
+    );
+
+  const date =
+    new Date(
+      `${raw}T12:00:00`
+    );
+
+  /* DAILY */
+
+  if (period === 'Daily') {
+    return raw === anchor;
+  }
+
+  /* MONTHLY */
+
+  if (period === 'Monthly') {
+    return (
+      raw.slice(0, 7) ===
+      anchor.slice(0, 7)
+    );
+  }
+
+  /* WEEKLY */
+
+  const start =
+    new Date(selected);
+
+  start.setDate(
+    start.getDate() -
+      ((start.getDay() + 6) % 7)
+  );
+
+  const end =
+    new Date(start);
+
+  end.setDate(
+    start.getDate() + 7
+  );
+
+  return (
+    date >= start &&
+    date < end
+  );
+}
+
+
+/* =========================================================
    PDF HELPERS
 ========================================================= */
 
 function pdfMoney(value) {
-  return `PHP ${Number(value || 0).toLocaleString(
+  return `PHP ${Number(
+    value || 0
+  ).toLocaleString(
     'en-PH',
     {
       minimumFractionDigits: 2,
@@ -97,10 +170,14 @@ function pdfMoney(value) {
 }
 
 
-function getReportPeriodText(period, anchor) {
-  const selected = new Date(
-    `${anchor}T12:00:00`
-  );
+function getReportPeriodText(
+  period,
+  anchor
+) {
+  const selected =
+    new Date(
+      `${anchor}T12:00:00`
+    );
 
   if (period === 'Daily') {
     return dateText(anchor);
@@ -116,16 +193,20 @@ function getReportPeriodText(period, anchor) {
     );
   }
 
-  const start = new Date(selected);
+  const start =
+    new Date(selected);
 
   start.setDate(
     start.getDate() -
       ((start.getDay() + 6) % 7)
   );
 
-  const end = new Date(start);
+  const end =
+    new Date(start);
 
-  end.setDate(start.getDate() + 6);
+  end.setDate(
+    start.getDate() + 6
+  );
 
   return `${start.toLocaleDateString(
     'en-PH',
@@ -162,17 +243,27 @@ function downloadPdf({
   });
 
   const generatedAt =
-    new Date().toLocaleString('en-PH', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
+    new Date().toLocaleString(
+      'en-PH',
+      {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }
+    );
 
   const reportPeriod =
-    getReportPeriodText(period, anchor);
+    getReportPeriodText(
+      period,
+      anchor
+    );
 
-  /* ---------- HEADER ---------- */
+  /* HEADER */
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(
+    'helvetica',
+    'bold'
+  );
+
   doc.setFontSize(18);
 
   doc.text(
@@ -214,8 +305,7 @@ function downloadPdf({
     41
   );
 
-
-  /* ---------- SUMMARY ---------- */
+  /* SUMMARY */
 
   doc.setFont(
     'helvetica',
@@ -231,13 +321,14 @@ function downloadPdf({
   );
 
   doc.text(
-    `Recorded Revenue: ${pdfMoney(total)}`,
+    `Recorded Revenue: ${pdfMoney(
+      total
+    )}`,
     190,
     37
   );
 
-
-  /* ---------- TABLE ---------- */
+  /* TABLE */
 
   autoTable(doc, {
     startY: 48,
@@ -251,14 +342,23 @@ function downloadPdf({
       ],
     ],
 
-    body: rows.map((payment) => [
-      dateText(payment.paid_at),
-      payment.payment_method ||
-        'Unspecified',
-      payment.reference_number ||
-        'Not provided',
-      pdfMoney(payment.amount),
-    ]),
+    body: rows.map(
+      (payment) => [
+        dateText(
+          payment.paid_at
+        ),
+
+        payment.payment_method ||
+          'Unspecified',
+
+        payment.reference_number ||
+          'Not provided',
+
+        pdfMoney(
+          payment.amount
+        ),
+      ]
+    ),
 
     theme: 'grid',
 
@@ -312,16 +412,17 @@ function downloadPdf({
     },
   });
 
-
-  /* ---------- FINAL TOTAL ---------- */
+  /* FINAL TOTAL */
 
   const finalY =
-    doc.lastAutoTable?.finalY || 55;
+    doc.lastAutoTable?.finalY ||
+    55;
 
-  const totalY = Math.min(
-    finalY + 10,
-    195
-  );
+  const totalY =
+    Math.min(
+      finalY + 10,
+      195
+    );
 
   doc.setFont(
     'helvetica',
@@ -338,11 +439,13 @@ function downloadPdf({
     totalY
   );
 
-
-  /* ---------- FILE NAME ---------- */
+  /* FILE NAME */
 
   const safeAnchor =
-    String(anchor).replaceAll('-', '');
+    String(anchor).replaceAll(
+      '-',
+      ''
+    );
 
   const fileName =
     `zenora-revenue-report-${period.toLowerCase()}-${safeAnchor}.pdf`;
@@ -352,20 +455,42 @@ function downloadPdf({
 
 
 /* =========================================================
+   HELPERS
+========================================================= */
+
+function readableStatus(value) {
+  return String(value || '')
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase()
+    );
+}
+
+
+/* =========================================================
    COMPONENT
 ========================================================= */
 
 export default function ManagerPaymentReports() {
-  const [period, setPeriod] =
-    useState('Daily');
+  const [
+    period,
+    setPeriod,
+  ] = useState('Daily');
 
-  const [anchor, setAnchor] =
-    useState(
-      localYMD(new Date())
-    );
+  const [
+    anchor,
+    setAnchor,
+  ] = useState(
+    localYMD(new Date())
+  );
 
-  const [tab, setTab] =
-    useState('Revenue Report');
+  const [
+    tab,
+    setTab,
+  ] = useState(
+    'Revenue Report'
+  );
 
 
   /* =======================================================
@@ -388,98 +513,113 @@ export default function ManagerPaymentReports() {
   const payments =
     data?.payments || [];
 
+  const bookings =
+    data?.bookings || [];
+
 
   /* =======================================================
      FILTER PAYMENTS
   ======================================================= */
 
-  const included = useMemo(
-    () =>
-      payments.filter(
-        (payment) => {
-          const raw = String(
-            payment.paid_at || ''
-          ).slice(0, 10);
-
-          if (
-            !/^\d{4}-\d{2}-\d{2}$/.test(
-              raw
+  const included =
+    useMemo(
+      () =>
+        payments.filter(
+          (payment) =>
+            isInSelectedPeriod(
+              payment.paid_at,
+              period,
+              anchor
             )
-          ) {
-            return false;
-          }
-
-          const selected =
-            new Date(
-              `${anchor}T12:00:00`
-            );
-
-          const date =
-            new Date(
-              `${raw}T12:00:00`
-            );
-
-
-          /* DAILY */
-
-          if (
-            period === 'Daily'
-          ) {
-            return raw === anchor;
-          }
-
-
-          /* MONTHLY */
-
-          if (
-            period === 'Monthly'
-          ) {
-            return (
-              raw.slice(0, 7) ===
-              anchor.slice(0, 7)
-            );
-          }
-
-
-          /* WEEKLY */
-
-          const start =
-            new Date(selected);
-
-          start.setDate(
-            start.getDate() -
-              ((start.getDay() + 6) %
-                7)
-          );
-
-          const end =
-            new Date(start);
-
-          end.setDate(
-            start.getDate() + 7
-          );
-
-          return (
-            date >= start &&
-            date < end
-          );
-        }
-      ),
-    [
-      payments,
-      period,
-      anchor,
-    ]
-  );
+        ),
+      [
+        payments,
+        period,
+        anchor,
+      ]
+    );
 
 
   /* =======================================================
-     SUMMARY
+     FILTER BOOKINGS
+  ======================================================= */
+
+  const includedBookings =
+    useMemo(
+      () =>
+        bookings.filter(
+          (booking) =>
+            isInSelectedPeriod(
+              booking.appointment_date,
+              period,
+              anchor
+            )
+        ),
+      [
+        bookings,
+        period,
+        anchor,
+      ]
+    );
+
+
+  /* =======================================================
+     BOOKING COUNTS
+  ======================================================= */
+
+  const completedBookings =
+    useMemo(
+      () =>
+        includedBookings.filter(
+          (booking) =>
+            String(
+              booking.status || ''
+            ).toLowerCase() ===
+            'completed'
+        ),
+      [includedBookings]
+    );
+
+
+  const cancelledBookings =
+    useMemo(
+      () =>
+        includedBookings.filter(
+          (booking) => {
+            const status =
+              String(
+                booking.status || ''
+              )
+                .toLowerCase()
+                .replaceAll(
+                  '_',
+                  '-'
+                );
+
+            return (
+              status ===
+                'cancelled' ||
+              status ===
+                'canceled' ||
+              status ===
+                'no-show'
+            );
+          }
+        ),
+      [includedBookings]
+    );
+
+
+  /* =======================================================
+     REVENUE SUMMARY
   ======================================================= */
 
   const total =
     included.reduce(
-      (value, payment) =>
+      (
+        value,
+        payment
+      ) =>
         value +
         Number(
           payment.amount || 0
@@ -491,24 +631,33 @@ export default function ManagerPaymentReports() {
   const byDay =
     Object.entries(
       included.reduce(
-        (object, payment) => {
+        (
+          object,
+          payment
+        ) => {
           const date =
             String(
               payment.paid_at
-            ).slice(0, 10);
+            ).slice(
+              0,
+              10
+            );
 
           object[date] =
-            (object[date] || 0) +
+            (object[date] ||
+              0) +
             Number(
-              payment.amount || 0
+              payment.amount ||
+                0
             );
 
           return object;
         },
         {}
       )
-    ).sort(([a], [b]) =>
-      a.localeCompare(b)
+    ).sort(
+      ([a], [b]) =>
+        a.localeCompare(b)
     );
 
 
@@ -516,7 +665,8 @@ export default function ManagerPaymentReports() {
     Math.max(
       1,
       ...byDay.map(
-        ([, value]) => value
+        ([, value]) =>
+          value
       )
     );
 
@@ -525,14 +675,15 @@ export default function ManagerPaymentReports() {
      EXPORT
   ======================================================= */
 
-  const handlePdfExport = () => {
-    downloadPdf({
-      rows: included,
-      total,
-      period,
-      anchor,
-    });
-  };
+  const handlePdfExport =
+    () => {
+      downloadPdf({
+        rows: included,
+        total,
+        period,
+        anchor,
+      });
+    };
 
 
   /* =======================================================
@@ -596,9 +747,7 @@ export default function ManagerPaymentReports() {
 
       <Card>
 
-        {/* ===============================================
-            FILTER TOOLBAR
-        =============================================== */}
+        {/* FILTER TOOLBAR */}
 
         <div className="zm-toolbar">
 
@@ -610,25 +759,31 @@ export default function ManagerPaymentReports() {
               'Daily',
               'Weekly',
               'Monthly',
-            ].map((item) => (
-              <button
-                key={item}
-                role="tab"
-                aria-selected={
-                  period === item
-                }
-                className={
-                  period === item
-                    ? 'selected'
-                    : ''
-                }
-                onClick={() =>
-                  setPeriod(item)
-                }
-              >
-                {item}
-              </button>
-            ))}
+            ].map(
+              (item) => (
+                <button
+                  key={item}
+                  role="tab"
+                  aria-selected={
+                    period ===
+                    item
+                  }
+                  className={
+                    period ===
+                    item
+                      ? 'selected'
+                      : ''
+                  }
+                  onClick={() =>
+                    setPeriod(
+                      item
+                    )
+                  }
+                >
+                  {item}
+                </button>
+              )
+            )}
           </div>
 
 
@@ -638,33 +793,34 @@ export default function ManagerPaymentReports() {
             <input
               type="date"
               value={anchor}
-              onChange={(event) =>
-                setAnchor(
-                  event.target.value
-                )
+              onChange={
+                (event) =>
+                  setAnchor(
+                    event
+                      .target
+                      .value
+                  )
               }
             />
           </label>
-
         </div>
 
 
-        {/* ===============================================
-            DATA NOTICE
-        =============================================== */}
+        {/* DATA NOTICE */}
 
         <Notice>
-          The backend currently supplies manually
-          recorded payments (latest 200), not complete
-          booking/service report endpoints. Revenue below
-          is calculated only from those returned payments,
-          so it may not represent all historical payments.
+          Booking totals are
+          calculated from the
+          appointment records
+          returned by the backend.
+          Recorded revenue is based
+          on the latest 200 payment
+          transactions returned by
+          the payment report.
         </Notice>
 
 
-        {/* ===============================================
-            ERROR
-        =============================================== */}
+        {/* ERROR */}
 
         {error && (
           <ErrorState
@@ -674,9 +830,7 @@ export default function ManagerPaymentReports() {
         )}
 
 
-        {/* ===============================================
-            LOADING
-        =============================================== */}
+        {/* LOADING */}
 
         {loading ? (
           <Loading />
@@ -684,31 +838,35 @@ export default function ManagerPaymentReports() {
           !error && (
             <>
 
-              {/* =========================================
-                  SUMMARY CARDS
-              ========================================= */}
+              {/* SUMMARY CARDS */}
 
               <div className="zm-stats-grid compact">
 
                 <StatCard
                   label="Total Bookings"
-                  value="—"
+                  value={
+                    includedBookings.length
+                  }
                   icon="fa-calendar-alt"
-                  note="Booking report API needed"
+                  note="Bookings in selected period"
                 />
 
                 <StatCard
                   label="Completed"
-                  value="—"
+                  value={
+                    completedBookings.length
+                  }
                   icon="fa-check-circle"
-                  note="Booking status API needed"
+                  note="Completed bookings in selected period"
                 />
 
                 <StatCard
                   label="Cancelled / No-Show"
-                  value="—"
+                  value={
+                    cancelledBookings.length
+                  }
                   icon="fa-times-circle"
-                  note="Booking status API needed"
+                  note="Cancelled or no-show bookings"
                 />
 
                 <StatCard
@@ -723,9 +881,7 @@ export default function ManagerPaymentReports() {
               </div>
 
 
-              {/* =========================================
-                  REPORT TABS
-              ========================================= */}
+              {/* REPORT TABS */}
 
               <div
                 className="zm-tabs"
@@ -735,59 +891,121 @@ export default function ManagerPaymentReports() {
                   'Booking Report',
                   'Service Report',
                   'Revenue Report',
-                ].map((item) => (
-                  <button
-                    role="tab"
-                    aria-selected={
-                      tab === item
-                    }
-                    key={item}
-                    className={
-                      tab === item
-                        ? 'selected'
-                        : ''
-                    }
-                    onClick={() =>
-                      setTab(item)
-                    }
-                  >
-                    {item}
-                  </button>
-                ))}
+                ].map(
+                  (item) => (
+                    <button
+                      role="tab"
+                      aria-selected={
+                        tab ===
+                        item
+                      }
+                      key={item}
+                      className={
+                        tab ===
+                        item
+                          ? 'selected'
+                          : ''
+                      }
+                      onClick={() =>
+                        setTab(
+                          item
+                        )
+                      }
+                    >
+                      {item}
+                    </button>
+                  )
+                )}
               </div>
 
 
-              {/* =========================================
-                  BOOKING REPORT
-              ========================================= */}
+              {/* BOOKING REPORT */}
 
               {tab ===
               'Booking Report' ? (
+                <>
+                  <div className="zm-card-head">
+                    <h2>
+                      Booking Report
+                    </h2>
 
-                <EmptyState
-                  title="Booking report not available"
-                  description="Needs date, status and therapist information from a Manager bookings endpoint."
-                />
+                    <span>
+                      {
+                        includedBookings.length
+                      }{' '}
+                      bookings
+                    </span>
+                  </div>
 
+                  <DataTable
+                    headers={[
+                      'Date',
+                      'Service',
+                      'Status',
+                      'Source',
+                      'Amount Due',
+                    ]}
+                    empty="No bookings found in this period"
+                  >
+                    {includedBookings.map(
+                      (
+                        booking
+                      ) => (
+                        <tr
+                          key={
+                            booking.id
+                          }
+                        >
+                          <td>
+                            {dateText(
+                              booking.appointment_date
+                            )}
+                          </td>
+
+                          <td>
+                            {booking.service_name ||
+                              'Unspecified'}
+                          </td>
+
+                          <td>
+                            {readableStatus(
+                              booking.status
+                            )}
+                          </td>
+
+                          <td>
+                            {readableStatus(
+                              booking.booking_source
+                            ) ||
+                              'Unspecified'}
+                          </td>
+
+                          <td>
+                            <strong>
+                              {peso(
+                                booking.amount_due
+                              )}
+                            </strong>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </DataTable>
+                </>
 
               ) : tab ===
                 'Service Report' ? (
 
-                /* =======================================
-                   SERVICE REPORT
-                ======================================= */
+                /* SERVICE REPORT */
 
                 <EmptyState
                   title="Service report not available"
-                  description="Needs bookings and payments grouped by service from the backend."
+                  description="Service-level revenue reporting still requires payment records to be associated and grouped by service."
                 />
-
 
               ) : (
 
-                /* =======================================
-                   REVENUE REPORT
-                ======================================= */
+                /* REVENUE REPORT */
 
                 <>
 
@@ -802,9 +1020,7 @@ export default function ManagerPaymentReports() {
                   </div>
 
 
-                  {/* =====================================
-                      CHART
-                  ===================================== */}
+                  {/* CHART */}
 
                   {byDay.length ? (
 
@@ -812,7 +1028,6 @@ export default function ManagerPaymentReports() {
                       className="zm-chart"
                       aria-label="Daily recorded revenue chart"
                     >
-
                       {byDay.map(
                         ([
                           date,
@@ -821,15 +1036,15 @@ export default function ManagerPaymentReports() {
 
                           <div
                             className="zm-bar-item"
-                            key={date}
+                            key={
+                              date
+                            }
                           >
-
                             <span>
                               {dateText(
                                 date
                               )}
                             </span>
-
 
                             <div className="zm-bar-track">
 
@@ -840,23 +1055,20 @@ export default function ManagerPaymentReports() {
                                       value /
                                       max
                                     ) *
-                                      100}%`,
+                                    100}%`,
                                 }}
                               />
 
                             </div>
-
 
                             <strong>
                               {peso(
                                 value
                               )}
                             </strong>
-
                           </div>
                         )
                       )}
-
                     </div>
 
                   ) : (
@@ -868,9 +1080,7 @@ export default function ManagerPaymentReports() {
                   )}
 
 
-                  {/* =====================================
-                      PAYMENT TABLE
-                  ===================================== */}
+                  {/* PAYMENT TABLE */}
 
                   <DataTable
                     headers={[
@@ -881,16 +1091,16 @@ export default function ManagerPaymentReports() {
                     ]}
                     empty="No payment transactions found"
                   >
-
                     {included.map(
-                      (payment) => (
+                      (
+                        payment
+                      ) => (
 
                         <tr
                           key={
                             payment.id
                           }
                         >
-
                           <td>
                             {dateText(
                               payment.paid_at
@@ -914,11 +1124,9 @@ export default function ManagerPaymentReports() {
                               )}
                             </strong>
                           </td>
-
                         </tr>
                       )
                     )}
-
                   </DataTable>
 
                 </>
