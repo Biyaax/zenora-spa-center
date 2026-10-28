@@ -258,6 +258,10 @@ function AuthProvider({ children }) {
 
             password:
               formData.password,
+
+            confirmPassword:
+              formData.confirmPassword,
+            emailVerificationToken: formData.emailVerificationToken,
           },
         }
       );
@@ -272,8 +276,8 @@ function AuthProvider({ children }) {
     /*
      * DO NOT save a token here.
      *
-     * A newly registered account must
-     * verify its email before login.
+     * Gmail was verified before account creation.
+     * The user signs in separately after registration.
      */
     return data;
   }

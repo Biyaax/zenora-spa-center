@@ -4,6 +4,9 @@ const bcrypt = require("bcryptjs");
 const db = require("../database/postgres");
 const token = require("../lib/token");
 const v = require("../lib/validate");
+const { registrationFields, registrationEmailError } = require("../lib/registration");
+const { rateLimit } = require("../lib/rateLimit");
+const { requireMailDomain } = require("../services/emailDomain");
 
 const emailVerification = require(
   "../services/emailVerification"
@@ -25,6 +28,7 @@ const {
 } = require("../lib/notify");
 
 const router = express.Router();
+const registrationCodes = require("../services/registrationCodes");
 
 const DUMMY_HASH = bcrypt.hashSync(
   "not-a-real-password",
@@ -107,65 +111,16 @@ function recordFailure(key) {
    Public registration always creates a Guest account.
 
    IMPORTANT:
-   New account starts with email_verified = 0.
-   No JWT is issued until email has been verified.
+   No account is inserted until a Gmail code is verified.
+   Registration creates an already-verified account only with email-bound proof; sign-in is separate.
 ========================================================= */
 
 router.post(
   "/register",
   async (req, res) => {
-    const firstName =
-      v.text(
-        req.body.firstName,
-        "First name",
-        {
-          max: 80,
-        }
-      );
+    const { firstName, lastName, email, phone, password } = registrationFields(req.body);
 
-    const lastName =
-      v.text(
-        req.body.lastName,
-        "Last name",
-        {
-          max: 80,
-        }
-      );
-
-    const email =
-      v.email(
-        req.body.email
-      );
-
-    const phone =
-      v.phone(
-        req.body.phone,
-        "Phone",
-        {
-          required: true,
-        }
-      );
-
-    const password =
-      req.body.password;
-
-    if (
-      typeof password !==
-        "string" ||
-      password.length < 8
-    ) {
-      throw badRequest(
-        "Password must be at least 8 characters."
-      );
-    }
-
-    if (
-      password.length > 72
-    ) {
-      throw badRequest(
-        "Password must be 72 characters or fewer."
-      );
-    }
+    if (typeof req.body.emailVerificationToken !== "string" || !/^[a-f0-9]{64}$/.test(req.body.emailVerificationToken)) throw registrationCodes.proofError();
 
     /*
      * Check whether the email already exists.
@@ -196,12 +151,14 @@ router.post(
         ) !== 1
       ) {
         throw conflict(
-          "This email is already registered but has not been verified. Please resend the verification email."
+          "This email is already registered but has not been verified. Please resend the verification email.",
+          { fields: { email: "This email is already registered. Please resend its verification email." } }
         );
       }
 
       throw conflict(
-        "An account with this email already exists."
+        "An account with this email already exists.",
+        { fields: { email: "An account with this email already exists." } }
       );
     }
 
@@ -243,8 +200,10 @@ router.post(
         "BEGIN"
       );
 
+      await registrationCodes.consume(client, email, req.body.emailVerificationToken);
+
       /*
-       * Explicitly set email_verified = 0.
+       * Create only after code verification. The Gmail is already verified.
        */
       const userResult =
         await client.query(
@@ -266,8 +225,8 @@ router.post(
               $4,
               $5,
               $6,
-              0,
-              NULL
+              1,
+              to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
             )
             RETURNING id
           `,
@@ -322,7 +281,8 @@ router.post(
         error.code === "23505"
       ) {
         throw conflict(
-          "An account with this email already exists."
+          "An account with this email already exists.",
+          { fields: { email: "An account with this email already exists." } }
         );
       }
 
@@ -339,56 +299,7 @@ router.post(
       email
     );
 
-    /*
-     * Create verification token and send email.
-     *
-     * If SMTP fails, the account remains saved and
-     * unverified. The user can use Resend Verification.
-     */
-    let mailResult;
-
-    try {
-      mailResult =
-        await emailVerification.sendForUser({
-          userId,
-          email,
-          firstName,
-          accountType:
-            "Guest",
-        });
-    } catch (error) {
-      console.error(
-        "[email-verification] Could not create/send verification:",
-        error
-      );
-
-      mailResult = {
-        sent: false,
-        reason:
-          "The verification email could not be sent.",
-      };
-    }
-
-    return res
-      .status(201)
-      .json({
-        success: true,
-
-        requiresEmailVerification:
-          true,
-
-        verificationEmailSent:
-          Boolean(
-            mailResult?.sent
-          ),
-
-        email,
-
-        message:
-          mailResult?.sent
-            ? "Account created. Please check your email and click the verification link before signing in."
-            : "Account created, but the verification email could not be sent. Please use Resend Verification Email.",
-      });
+    return res.status(201).json({success:true,emailVerified:true,requiresEmailVerification:false,email,message:"Account created. Your Gmail is verified. You may now sign in."});
   }
 );
 
@@ -465,6 +376,7 @@ router.get(
 router.post(
   "/resend-verification",
   async (req, res) => {
+    v.object(req.body);
     const email =
       v.email(
         req.body.email
@@ -535,26 +447,8 @@ router.post(
    Every role must have email_verified = 1.
 ========================================================= */
 
-router.post(
-  "/login",
-  async (req, res) => {
-    const email =
-      v.email(
-        req.body.email
-      );
-
-    const password =
-      req.body.password;
-
-    if (
-      typeof password !==
-        "string" ||
-      !password
-    ) {
-      throw badRequest(
-        "Password is required."
-      );
-    }
+async function login(req, res) {
+    const { email, password } = v.loginFields(req.body);
 
     const key =
       `${email}|${req.ip}`;
@@ -602,7 +496,8 @@ router.post(
     if (
       !row ||
       !valid ||
-      !row.is_active
+      !row.is_active ||
+      (req.path === "/staff/login" && !["Spa Manager", "Receptionist", "Massage Therapist"].includes(row.role))
     ) {
       recordFailure(key);
 
@@ -647,8 +542,10 @@ router.post(
       user:
         publicUser(row),
     });
-  }
-);
+}
+
+router.post("/login", login);
+router.post("/staff/login", login);
 
 /* =========================================================
    CURRENT USER
@@ -794,5 +691,27 @@ router.patch(
     });
   }
 );
+
+router.post("/email-domain", rateLimit({ max: 40, windowMs: 10 * 60 * 1000 }), async (req, res) => {
+  v.object(req.body);
+  const invalid = registrationEmailError(req.body.email);
+  if (invalid) throw badRequest(invalid, { fields: { email: invalid } });
+  await requireMailDomain(req.body.email.trim().toLowerCase());
+  res.json({ success: true, message: "Email domain found. Mailbox verification is still required." });
+});
+
+router.post("/registration-code/send", rateLimit({max:5,windowMs:15*60*1000}), async(req,res)=>{
+  v.object(req.body);
+  const invalid=registrationEmailError(req.body.email);
+  if(invalid)throw badRequest(invalid,{fields:{email:invalid}});
+  const email=req.body.email.trim().toLowerCase();
+  res.json({success:true,...await registrationCodes.send(email)});
+});
+router.post("/registration-code/verify", rateLimit({max:20,windowMs:15*60*1000}), async(req,res)=>{
+  v.object(req.body);
+  const invalid=registrationEmailError(req.body.email);
+  if(invalid)throw badRequest(invalid);
+  res.json({success:true,...await registrationCodes.verify({...req.body,email:req.body.email.trim().toLowerCase()})});
+});
 
 module.exports = router;
