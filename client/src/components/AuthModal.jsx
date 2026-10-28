@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { validateStaffLogin } from "../utils/validation";
 import { normalizePhPhone, validateRegistration } from "../utils/registrationValidation";
 import "./AuthModal.css";
 
 function AuthModal({ isOpen, onClose }) {
+  const navigate = useNavigate();
+
   const {
     login,
     register,
@@ -202,6 +205,11 @@ function AuthModal({ isOpen, onClose }) {
       setTouched({});
       setServerFields({});
       onClose();
+
+      // Guest goes directly to dashboard after login
+      navigate("/guest/dashboard", {
+        replace: true,
+      });
     } catch (err) {
       setError(
         err?.message ||
@@ -284,10 +292,7 @@ function AuthModal({ isOpen, onClose }) {
       setShowRegisterPassword(false);
       setShowConfirmPassword(false);
 
-      /*
-       * Do NOT close the modal.
-       * Show the verification screen.
-       */
+      // Keep modal open and show email verification screen
       setMode("verify");
     } catch (err) {
       const fields = err?.details?.fields || {};
@@ -628,8 +633,7 @@ function AuthModal({ isOpen, onClose }) {
             </form>
 
             <p className="text-center mt-4 mb-0">
-              Don't have an
-              account?{" "}
+              Don't have an account?{" "}
 
               <button
                 type="button"
@@ -962,8 +966,7 @@ function AuthModal({ isOpen, onClose }) {
             </form>
 
             <p className="text-center mt-4 mb-0">
-              Already have an
-              account?{" "}
+              Already have an account?{" "}
 
               <button
                 type="button"

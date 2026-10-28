@@ -6,6 +6,7 @@ import {
 import {
   NavLink,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 
 import AuthModal from "./AuthModal";
@@ -34,6 +35,9 @@ function Navbar() {
 
   const location =
     useLocation();
+
+  const navigate =
+    useNavigate();
 
   const {
     user,
@@ -79,18 +83,29 @@ function Navbar() {
     setAuthModalOpen(true);
   };
 
+  /* =======================================================
+     LOGOUT
+  ======================================================= */
+
   const handleLogout = () => {
     logout();
 
     setMenuOpen(false);
     setPagesOpen(false);
     setAccountOpen(false);
+    setAuthModalOpen(false);
+
+    // Guest returns to Home after logout
+    navigate("/", {
+      replace: true,
+    });
   };
 
   return (
     <>
       <div className="container-fluid p-0">
         <nav className="navbar navbar-expand-lg bg-white navbar-light py-3 py-lg-0 px-lg-5">
+
           {/* Logo */}
 
           <NavLink
@@ -135,6 +150,7 @@ function Navbar() {
             }`}
           >
             <div className="navbar-nav m-auto py-0">
+
               <NavLink
                 to="/"
                 end
@@ -251,6 +267,7 @@ function Navbar() {
               {/* Mobile Account */}
 
               <div className="d-lg-none mt-3">
+
                 <NavLink
                   to="/staff/login"
                   className="btn btn-outline-primary btn-block mb-2"
@@ -303,6 +320,7 @@ function Navbar() {
             {/* Desktop Account */}
 
             <div className="d-none d-lg-flex align-items-center">
+
               <NavLink
                 to="/staff/login"
                 className="btn btn-outline-primary mr-2"
