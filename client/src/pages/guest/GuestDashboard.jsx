@@ -1,27 +1,135 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { api } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
-import guestAppointments from "../../data/guestAppointments";
 
 function GuestDashboard() {
   const { user } = useAuth();
 
-  const upcomingAppointments = guestAppointments.filter(
-    (appointment) =>
-      appointment.status === "Confirmed" ||
-      appointment.status === "Pending"
-  );
+  const [appointments, setAppointments] = useState({
+    upcoming: [],
+    history: [],
+  });
 
-  const completedAppointments = guestAppointments.filter(
-    (appointment) =>
-      appointment.status === "Completed"
-  );
+  const [notifications, setNotifications] = useState({
+    items: [],
+    unread: 0,
+  });
 
-  const nextAppointment = upcomingAppointments[0];
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  /* =======================================================
+     LOAD REAL GUEST DATA
+  ======================================================= */
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [appointmentData, notificationData] =
+        await Promise.all([
+          api("/me/appointments"),
+          api("/me/notifications"),
+        ]);
+
+      setAppointments({
+        upcoming: Array.isArray(appointmentData?.upcoming)
+          ? appointmentData.upcoming
+          : [],
+
+        history: Array.isArray(appointmentData?.history)
+          ? appointmentData.history
+          : [],
+      });
+
+      setNotifications({
+        items: Array.isArray(notificationData?.items)
+          ? notificationData.items
+          : [],
+
+        unread: Number(notificationData?.unread || 0),
+      });
+    } catch (err) {
+      console.error(
+        "Unable to load guest dashboard:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to load your dashboard information."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  /* =======================================================
+     REAL DASHBOARD VALUES
+  ======================================================= */
+
+  const upcomingAppointments = useMemo(() => {
+    return [...appointments.upcoming].sort((a, b) => {
+      const first = new Date(
+        `${a.appointment_date}T${a.start_time || "00:00:00"}`
+      );
+
+      const second = new Date(
+        `${b.appointment_date}T${b.start_time || "00:00:00"}`
+      );
+
+      return first - second;
+    });
+  }, [appointments.upcoming]);
+
+  const completedAppointments = useMemo(() => {
+    return appointments.history.filter(
+      (appointment) =>
+        String(appointment.status || "").toLowerCase() ===
+        "completed"
+    );
+  }, [appointments.history]);
+
+  const nextAppointment =
+    upcomingAppointments.length > 0
+      ? upcomingAppointments[0]
+      : null;
+
+  const notificationCount =
+    Number.isFinite(notifications.unread)
+      ? notifications.unread
+      : notifications.items.filter(
+          (notification) => !notification.is_read
+        ).length;
+
+  /* =======================================================
+     FORMATTERS
+  ======================================================= */
 
   const formatDate = (date) => {
-    return new Date(`${date}T00:00:00`).toLocaleDateString(
-      "en-US",
+    if (!date) {
+      return "Not available";
+    }
+
+    const rawDate = String(date).slice(0, 10);
+
+    const parsedDate = new Date(
+      `${rawDate}T00:00:00`
+    );
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return rawDate;
+    }
+
+    return parsedDate.toLocaleDateString(
+      "en-PH",
       {
         month: "long",
         day: "numeric",
@@ -30,25 +138,93 @@ function GuestDashboard() {
     );
   };
 
+  const formatTime = (time) => {
+    if (!time) {
+      return "Not available";
+    }
+
+    const parts = String(time).split(":");
+
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1] || 0);
+
+    if (
+      Number.isNaN(hours) ||
+      Number.isNaN(minutes)
+    ) {
+      return String(time);
+    }
+
+    const date = new Date();
+
+    date.setHours(hours, minutes, 0, 0);
+
+    return date.toLocaleTimeString(
+      "en-PH",
+      {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }
+    );
+  };
+
+  const formatStatus = (status) => {
+    const value = String(status || "").trim();
+
+    if (!value) {
+      return "Unknown";
+    }
+
+    return value
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (letter) =>
+        letter.toUpperCase()
+      );
+  };
+
   const getStatusClass = (status) => {
-    if (status === "Confirmed") {
+    const value = String(
+      status || ""
+    ).toLowerCase();
+
+    if (value === "confirmed") {
       return "badge-success";
     }
 
-    if (status === "Pending") {
+    if (value === "pending") {
       return "badge-warning";
+    }
+
+    if (value === "completed") {
+      return "badge-primary";
+    }
+
+    if (
+      value === "cancelled" ||
+      value === "canceled" ||
+      value === "no-show" ||
+      value === "no_show"
+    ) {
+      return "badge-danger";
     }
 
     return "badge-secondary";
   };
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
     <>
-      
-      {/* Dashboard */}
       <div className="container-fluid py-5">
         <div className="container">
-          {/* Welcome */}
+
+          {/* =============================================
+              WELCOME
+          ============================================= */}
+
           <div className="mb-5">
             <h6 className="d-inline-block bg-light text-primary text-uppercase py-1 px-2">
               Guest Dashboard
@@ -63,8 +239,36 @@ function GuestDashboard() {
             </p>
           </div>
 
-          {/* Summary Cards */}
+          {/* =============================================
+              ERROR
+          ============================================= */}
+
+          {error && (
+            <div
+              className="alert alert-danger mb-4"
+              role="alert"
+            >
+              <div className="d-flex flex-wrap align-items-center justify-content-between">
+                <span>{error}</span>
+
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger ml-2"
+                  onClick={loadDashboard}
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* =============================================
+              SUMMARY CARDS
+          ============================================= */}
+
           <div className="row mb-5">
+
+            {/* Upcoming */}
             <div className="col-lg-4 col-md-6 mb-4">
               <Link
                 to="/guest/appointments"
@@ -78,7 +282,9 @@ function GuestDashboard() {
                       </p>
 
                       <h2 className="mb-0">
-                        {upcomingAppointments.length}
+                        {loading
+                          ? "—"
+                          : upcomingAppointments.length}
                       </h2>
                     </div>
 
@@ -88,6 +294,7 @@ function GuestDashboard() {
               </Link>
             </div>
 
+            {/* Completed */}
             <div className="col-lg-4 col-md-6 mb-4">
               <Link
                 to="/guest/history"
@@ -101,7 +308,9 @@ function GuestDashboard() {
                       </p>
 
                       <h2 className="mb-0">
-                        {completedAppointments.length}
+                        {loading
+                          ? "—"
+                          : completedAppointments.length}
                       </h2>
                     </div>
 
@@ -111,6 +320,7 @@ function GuestDashboard() {
               </Link>
             </div>
 
+            {/* Notifications */}
             <div className="col-lg-4 col-md-6 mb-4">
               <Link
                 to="/guest/notifications"
@@ -124,7 +334,9 @@ function GuestDashboard() {
                       </p>
 
                       <h2 className="mb-0">
-                        2
+                        {loading
+                          ? "—"
+                          : notificationCount}
                       </h2>
                     </div>
 
@@ -135,11 +347,19 @@ function GuestDashboard() {
             </div>
           </div>
 
-          {/* Main Content */}
+          {/* =============================================
+              MAIN CONTENT
+          ============================================= */}
+
           <div className="row">
-            {/* Next Appointment */}
+
+            {/* ===========================================
+                NEXT APPOINTMENT
+            =========================================== */}
+
             <div className="col-lg-8 mb-4">
               <div className="bg-light p-4 p-lg-5 h-100">
+
                 <div className="d-flex justify-content-between align-items-center mb-4">
                   <div>
                     <h6 className="text-primary text-uppercase mb-2">
@@ -159,16 +379,33 @@ function GuestDashboard() {
                   </Link>
                 </div>
 
-                {nextAppointment ? (
+                {/* Loading */}
+                {loading ? (
+                  <div className="bg-white p-5 text-center">
+                    <i className="fas fa-spinner fa-spin fa-2x text-primary mb-3"></i>
+
+                    <p className="text-muted mb-0">
+                      Loading your appointments...
+                    </p>
+                  </div>
+                ) : nextAppointment ? (
+
+                  /* =====================================
+                     REAL NEXT APPOINTMENT
+                  ===================================== */
+
                   <div className="guest-appointment-preview bg-white p-4">
+
                     <div className="d-flex flex-wrap justify-content-between align-items-start mb-3">
                       <div>
                         <h4 className="mb-1">
-                          {nextAppointment.service}
+                          {nextAppointment.service_name ||
+                            "Spa Service"}
                         </h4>
 
                         <p className="text-muted mb-0">
-                          Appointment #{nextAppointment.id}
+                          Appointment #
+                          {nextAppointment.id}
                         </p>
                       </div>
 
@@ -177,59 +414,80 @@ function GuestDashboard() {
                           nextAppointment.status
                         )} px-3 py-2`}
                       >
-                        {nextAppointment.status}
+                        {formatStatus(
+                          nextAppointment.status
+                        )}
                       </span>
                     </div>
 
                     <hr />
 
                     <div className="row">
+
+                      {/* Therapist */}
                       <div className="col-md-6 mb-3">
                         <p className="text-muted mb-1">
                           Therapist
                         </p>
 
                         <strong>
-                          {nextAppointment.therapist}
+                          {nextAppointment.therapist_name ||
+                            "Not assigned"}
                         </strong>
                       </div>
 
+                      {/* Date */}
                       <div className="col-md-6 mb-3">
                         <p className="text-muted mb-1">
                           Date
                         </p>
 
                         <strong>
-                          {formatDate(nextAppointment.date)}
+                          {formatDate(
+                            nextAppointment.appointment_date
+                          )}
                         </strong>
                       </div>
 
+                      {/* Time */}
                       <div className="col-md-6 mb-3">
                         <p className="text-muted mb-1">
                           Time
                         </p>
 
                         <strong>
-                          {nextAppointment.time}
+                          {formatTime(
+                            nextAppointment.start_time
+                          )}
                         </strong>
                       </div>
 
+                      {/* Duration */}
                       <div className="col-md-6 mb-3">
                         <p className="text-muted mb-1">
                           Duration
                         </p>
 
                         <strong>
-                          {nextAppointment.duration} minutes
+                          {nextAppointment.duration_minutes
+                            ? `${nextAppointment.duration_minutes} minutes`
+                            : "Not available"}
                         </strong>
                       </div>
                     </div>
                   </div>
                 ) : (
+
+                  /* =====================================
+                     NO UPCOMING APPOINTMENT
+                  ===================================== */
+
                   <div className="bg-white p-4 text-center">
                     <i className="far fa-calendar-times fa-3x text-muted mb-3"></i>
 
-                    <h5>No upcoming appointments</h5>
+                    <h5>
+                      No upcoming appointments
+                    </h5>
 
                     <p className="text-muted">
                       You currently have no scheduled visits.
@@ -246,9 +504,13 @@ function GuestDashboard() {
               </div>
             </div>
 
-            {/* Quick Actions */}
+            {/* ===========================================
+                QUICK ACTIONS
+            =========================================== */}
+
             <div className="col-lg-4 mb-4">
               <div className="bg-dark text-white p-4 p-lg-5 h-100">
+
                 <h4 className="text-white mb-4">
                   Quick Actions
                 </h4>
@@ -283,6 +545,13 @@ function GuestDashboard() {
                 >
                   <i className="far fa-bell mr-2"></i>
                   Notifications
+
+                  {!loading &&
+                    notificationCount > 0 && (
+                      <span className="badge badge-primary ml-2">
+                        {notificationCount}
+                      </span>
+                    )}
                 </Link>
               </div>
             </div>
