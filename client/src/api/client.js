@@ -34,6 +34,7 @@ export async function api(
     method = "GET",
     body,
     query,
+    signal,
   } = {}
 ) {
   const url = new URL(
@@ -76,13 +77,15 @@ export async function api(
       {
         method,
         headers,
+        signal,
         body:
           body !== undefined
             ? JSON.stringify(body)
             : undefined,
       }
     );
-  } catch {
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
     throw new ApiError(
       "Cannot reach the server. Please check your connection.",
       0

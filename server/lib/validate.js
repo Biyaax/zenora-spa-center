@@ -20,6 +20,10 @@ function text(value, label, { required = true, max = 255 } = {}) {
     return null;
   }
 
+  if (trimmed.includes("\0")) {
+    throw badRequest(`${label} contains an invalid character.`);
+  }
+
   if (trimmed.length > max) {
     throw badRequest(`${label} must be ${max} characters or fewer.`);
   }
@@ -52,7 +56,10 @@ function phone(value, label = "Phone", { required = false } = {}) {
 function id(value, label) {
   const number = Number(value);
 
-  if (!Number.isInteger(number) || number <= 0) {
+  if (
+    !(typeof value === "number" || (typeof value === "string" && /^[1-9]\d*$/.test(value))) ||
+    !Number.isSafeInteger(number) || number <= 0 || number > 2147483647
+  ) {
     throw badRequest(`${label} is invalid.`);
   }
 
@@ -64,4 +71,28 @@ function optionalId(value, label) {
   return id(value, label);
 }
 
-module.exports = { text, email, phone, id, optionalId };
+function object(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw badRequest("Please send a valid request body.");
+  }
+  return value;
+}
+
+function loginFields(body) {
+  object(body);
+  const fields = {};
+  let normalizedEmail;
+  try { normalizedEmail = email(body.email); }
+  catch (error) { fields.email = error.message; }
+  if (typeof body.password !== "string" || !body.password.trim()) {
+    fields.password = "Password is required.";
+  } else if (body.password.length > 4096) {
+    fields.password = "Password is too long.";
+  }
+  if (Object.keys(fields).length) {
+    throw badRequest("Please correct the highlighted fields.", { fields });
+  }
+  return { email: normalizedEmail, password: body.password };
+}
+
+module.exports = { text, email, phone, id, optionalId, object, loginFields };

@@ -77,6 +77,10 @@ async function atomically(fn) {
 
   try {
     await client.query("BEGIN");
+    // Serialize booking/reschedule checks and writes across API instances.
+    // This also covers reception bookings, which share this transaction helper.
+    // The lock releases automatically on COMMIT or ROLLBACK.
+    await client.query("SELECT pg_advisory_xact_lock(724016, 1)");
 
     const result = await fn(client);
 
@@ -106,6 +110,7 @@ function describe(a) {
 /* ---------- Book ---------- */
 
 async function book(user, body) {
+  v.object(body);
   const serviceId = v.id(
     body.serviceId,
     "Service"
