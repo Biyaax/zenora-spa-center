@@ -127,6 +127,7 @@ function StaffLogin() {
               value={email}
               onChange={(event) => {
                 setEmail(event.target.value);
+                setTouched((current) => ({ ...current, email: true }));
                 setError("");
               }}
               autoComplete="email"
@@ -164,6 +165,7 @@ function StaffLogin() {
                 value={password}
                 onChange={(event) => {
                   setPassword(event.target.value);
+                  setTouched((current) => ({ ...current, password: true }));
                   setError("");
                 }}
                 autoComplete="current-password"

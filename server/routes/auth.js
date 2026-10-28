@@ -4,7 +4,8 @@ const bcrypt = require("bcryptjs");
 const db = require("../database/postgres");
 const token = require("../lib/token");
 const v = require("../lib/validate");
-const { registrationFields } = require("../lib/registration");
+const { registrationFields, registrationEmailError } = require("../lib/registration");
+const { rateLimit } = require("../lib/rateLimit");
 const { requireMailDomain } = require("../services/emailDomain");
 
 const emailVerification = require(
@@ -27,6 +28,7 @@ const {
 } = require("../lib/notify");
 
 const router = express.Router();
+const registrationCodes = require("../services/registrationCodes");
 
 const DUMMY_HASH = bcrypt.hashSync(
   "not-a-real-password",
@@ -109,14 +111,16 @@ function recordFailure(key) {
    Public registration always creates a Guest account.
 
    IMPORTANT:
-   New account starts with email_verified = 0.
-   No JWT is issued until email has been verified.
+   No account is inserted until a Gmail code is verified.
+   Registration creates an already-verified account only with email-bound proof; sign-in is separate.
 ========================================================= */
 
 router.post(
   "/register",
   async (req, res) => {
     const { firstName, lastName, email, phone, password } = registrationFields(req.body);
+
+    if (typeof req.body.emailVerificationToken !== "string" || !/^[a-f0-9]{64}$/.test(req.body.emailVerificationToken)) throw registrationCodes.proofError();
 
     /*
      * Check whether the email already exists.
@@ -158,10 +162,6 @@ router.post(
       );
     }
 
-    // DNS checks reject invalid mail domains; clicking the emailed link
-    // is still required to prove access to this particular mailbox.
-    await requireMailDomain(email);
-
     /*
      * Public registration creates Guest only.
      */
@@ -200,8 +200,10 @@ router.post(
         "BEGIN"
       );
 
+      await registrationCodes.consume(client, email, req.body.emailVerificationToken);
+
       /*
-       * Explicitly set email_verified = 0.
+       * Create only after code verification. The Gmail is already verified.
        */
       const userResult =
         await client.query(
@@ -223,8 +225,8 @@ router.post(
               $4,
               $5,
               $6,
-              0,
-              NULL
+              1,
+              to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
             )
             RETURNING id
           `,
@@ -297,56 +299,7 @@ router.post(
       email
     );
 
-    /*
-     * Create verification token and send email.
-     *
-     * If SMTP fails, the account remains saved and
-     * unverified. The user can use Resend Verification.
-     */
-    let mailResult;
-
-    try {
-      mailResult =
-        await emailVerification.sendForUser({
-          userId,
-          email,
-          firstName,
-          accountType:
-            "Guest",
-        });
-    } catch (error) {
-      console.error(
-        "[email-verification] Could not create/send verification:",
-        error
-      );
-
-      mailResult = {
-        sent: false,
-        reason:
-          "The verification email could not be sent.",
-      };
-    }
-
-    return res
-      .status(201)
-      .json({
-        success: true,
-
-        requiresEmailVerification:
-          true,
-
-        verificationEmailSent:
-          Boolean(
-            mailResult?.sent
-          ),
-
-        email,
-
-        message:
-          mailResult?.sent
-            ? "Account created. Please check your email and click the verification link before signing in."
-            : "Account created, but the verification email could not be sent. Please use Resend Verification Email.",
-      });
+    return res.status(201).json({success:true,emailVerified:true,requiresEmailVerification:false,email,message:"Account created. Your Gmail is verified. You may now sign in."});
   }
 );
 
@@ -738,5 +691,27 @@ router.patch(
     });
   }
 );
+
+router.post("/email-domain", rateLimit({ max: 40, windowMs: 10 * 60 * 1000 }), async (req, res) => {
+  v.object(req.body);
+  const invalid = registrationEmailError(req.body.email);
+  if (invalid) throw badRequest(invalid, { fields: { email: invalid } });
+  await requireMailDomain(req.body.email.trim().toLowerCase());
+  res.json({ success: true, message: "Email domain found. Mailbox verification is still required." });
+});
+
+router.post("/registration-code/send", rateLimit({max:5,windowMs:15*60*1000}), async(req,res)=>{
+  v.object(req.body);
+  const invalid=registrationEmailError(req.body.email);
+  if(invalid)throw badRequest(invalid,{fields:{email:invalid}});
+  const email=req.body.email.trim().toLowerCase();
+  res.json({success:true,...await registrationCodes.send(email)});
+});
+router.post("/registration-code/verify", rateLimit({max:20,windowMs:15*60*1000}), async(req,res)=>{
+  v.object(req.body);
+  const invalid=registrationEmailError(req.body.email);
+  if(invalid)throw badRequest(invalid);
+  res.json({success:true,...await registrationCodes.verify({...req.body,email:req.body.email.trim().toLowerCase()})});
+});
 
 module.exports = router;

@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nameError, registrationEmailError, normalizePhPhone, phoneError, passwordError, validateRegistration } from '../src/utils/registrationValidation.js';
-const valid={firstName:'María',lastName:"Dela Cruz-Santos",email:'student+spa@example.com',phone:'+63 917 123 4567',password:'My pass 123',confirmPassword:'My pass 123'};
+const valid={firstName:'María',lastName:"Dela Cruz-Santos",email:'student+spa@gmail.com',phone:'+63 917 123 4567',password:'My pass 123',confirmPassword:'My pass 123'};
 test('registration names allow accents, initials, hyphens and apostrophes, and reject numbers/HTML/blank',()=>{
  for(const name of ['Ñina','José','O’Connor',"O'Neil",'Dela Cruz','Anne-Marie','J.','李'])assert.equal(nameError(name,'Name'),'');
  for(const name of ['   ','123','A12','<script>','---','A\0B','a'.repeat(81)])assert.ok(nameError(name,'Name'));
 });
 test('email syntax accepts plus aliases and rejects malformed mailbox/domain boundaries',()=>{
- for(const value of ['student+spa@example.com',"o'neil@school.edu.ph",' USER@GMAIL.COM '])assert.equal(registrationEmailError(value),'');
- for(const value of ['a..b@gmail.com','.a@gmail.com','a.@gmail.com','a@-gmail.com','a@gmail..com','a@gmail','a@b.1','a'.repeat(65)+'@gmail.com','<a>@gmail.com'])assert.ok(registrationEmailError(value),value);
+ for(const value of ['student+spa@gmail.com',"student.name@gmail.com",' USER@GMAIL.COM '])assert.equal(registrationEmailError(value),'');
+ for(const value of ['a@example.com','a@googlemail.com','a@gmail.com.fake','a..b@gmail.com','.a@gmail.com','a.@gmail.com','a@-gmail.com','a@gmail..com','a@gmail','a@b.1','a'.repeat(65)+'@gmail.com','<a>@gmail.com'])assert.ok(registrationEmailError(value),value);
 });
 test('Philippine mobile numbers accept common local/international formatting and normalize',()=>{
  for(const value of ['09171234567','+639171234567','639171234567','+63 917 123 4567','0917-123-4567']){

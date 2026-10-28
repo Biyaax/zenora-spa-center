@@ -25,6 +25,7 @@ function registrationEmailError(value) {
       !/[a-z]/i.test(labels.at(-1)) || labels.at(-1).length < 2) {
     return "Enter a valid email address, such as name@example.com.";
   }
+  if (domain.toLowerCase() !== "gmail.com") return "Please use a Gmail address ending in @gmail.com.";
   return "";
 }
 

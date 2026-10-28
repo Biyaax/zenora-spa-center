@@ -7,7 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "db:setup": "node database/setup-postgres.js",
-    "test": "node --test test/auth.test.js test/availability.test.js test/validation.test.js test/registration.test.js test/emailDomain.test.js test/verification.test.js test/mailer.test.js"
+    "test": "node --test test/auth.test.js test/availability.test.js test/validation.test.js test/registration.test.js test/emailDomain.test.js test/verification.test.js test/mailer.test.js",
+    "db:registration-codes": "node database/setup-registration-codes.js"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +25,7 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "@electric-sql/pglite": "^0.5.12"
   }
 }

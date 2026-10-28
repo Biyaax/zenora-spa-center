@@ -116,10 +116,11 @@ function AppointmentForm() {
     }
     if (["serviceId", "therapistId", "date"].includes(field)) {
       setSlots([]);
-      setLoadingSlots(false);
+      const next = { ...formData, [field]: value, ...reset };
+      setLoadingSlots(Boolean(next.serviceId && next.therapistId && next.date && !dateError(next.date, rules)));
     }
     setTouched((current) => {
-      const next = { ...current };
+      const next = { ...current, [field]: true };
       for (const dependent of Object.keys(reset)) delete next[dependent];
       return next;
     });
@@ -244,6 +245,9 @@ function AppointmentForm() {
             {slots.map((slot) => <option key={slot.start} value={slot.start}>{formatTime(slot.start)}</option>)}
           </select>
           {fieldError("time")}
+          {formData.serviceId && formData.therapistId && formData.date && !dateError(formData.date, rules) && !loadingSlots && slots.length === 0 && (
+            <small className="text-white d-block mt-1" role="status">No available times. Please choose another date or therapist.</small>
+          )}
         </div></div>
       </div>
       <div className="form-group">
